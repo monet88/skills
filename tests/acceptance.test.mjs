@@ -110,7 +110,7 @@ describe('Ask Impeccable Acceptance Suite', () => {
     });
 
     assert.match(output, /ask-impeccable/, 'CLI should list ask-impeccable');
-    assert.match(output, /Frontend and UI workflow router/i, 'CLI should show UI workflow router description');
+    assert.match(output, /Coordinator for Impeccable UI workflows/i, 'CLI should show the Impeccable coordinator description');
   });
 
   test('Source repository contains required agents/openai.yaml metadata and policy with products', () => {
@@ -255,27 +255,30 @@ describe('Ask Impeccable Acceptance Suite', () => {
     assert.deepEqual(claudeYaml.policy.products, ['chatgpt', 'codex']);
   });
 
-  test('Installed artifact uses recovery-first dependency installation, fallback ban, and no persistent state', () => {
+  test('Installed artifact is coordinator-only, init-first, and batches commands when safe', () => {
     const installedSkillPath = path.join(tempTestDir, 'antigravity-env', '.agents', 'skills', 'ask-impeccable', 'SKILL.md');
     const content = fs.readFileSync(installedSkillPath, 'utf8');
 
     const parsed = parseFrontmatter(content);
-    assert.match(parsed.data.description, /UI|Frontend|workflow/i, 'Metadata must target UI/frontend');
-    assert.match(parsed.data.description, /ask-impeccable/i, 'Metadata must mention explicit invocation');
+    assert.match(parsed.data.description, /Coordinator/i, 'Metadata must describe coordinator behavior');
+    assert.match(parsed.data.description, /batching a coherent serial command chain/i, 'Metadata must prefer safe command batching');
 
-    assert.match(content, /impeccable/i, 'Must mention impeccable dependency');
-    assert.match(content, /missing/i, 'Must specify behavior when impeccable is missing');
-    assert.match(content, /npx skills add pbakaus\/impeccable/, 'Must provide the canonical Impeccable install command');
-    assert.match(content, /--skill impeccable -y/, 'Must provide a non-interactive automatic install form');
+    assert.match(content, /first command.*`\/impeccable init`/is, 'Init must be first');
+    assert.match(content, /Native commands only/i, 'Worker prompts must preserve native Impeccable commands');
+    assert.match(content, /Batch when safe/i, 'Known command chains should stay in one worker session');
+    assert.match(content, /Serial inside the batch/i, 'Commands inside a batch must execute serially');
+    assert.match(content, /Split only at a real boundary/i, 'Fresh sessions must be reserved for real boundaries');
+    assert.match(content, /Coordinator does not design/i, 'Coordinator must not perform UI work itself');
+    assert.match(content, /\/impeccable init\n\/impeccable audit dashboard/is, 'Must include an init-first same-prompt command batch example');
+    assert.match(content, /Do not force one-command-per-session churn/i, 'Unnecessary fresh-session churn must be forbidden');
+
+    assert.match(content, /npx impeccable install/i, 'Must use upstream installer guidance');
     assert.match(content, /re-check/i, 'Must re-check dependency availability after installation');
-    assert.match(content, /continue the user'?s original UI workflow/i, 'Must continue the original workflow after recovery');
-    assert.match(content, /do not (emulate|improvise|fabricate)/i, 'Must strictly forbid fallback improvisation');
-    assert.doesNotMatch(content, /Halt immediately/i, 'Missing dependency must use recovery-first flow, not unconditional halt');
-
-    assert.match(content, /no persistent state/i, 'Must explicitly state no persistent state');
-    assert.match(content, /\.ask-impeccable/i, 'Must explicitly forbid .ask-impeccable state dirs');
+    assert.match(content, /Never fabricate Impeccable behavior/i, 'Must forbid fallback improvisation');
+    assert.match(content, /\.ask-impeccable/i, 'Must forbid parallel ask-impeccable state');
+    assert.doesNotMatch(content, /Read-Only UI Research Layer/i, 'Coordinator skill must not own a competing research layer');
   });
-  test('Installed artifact routes all 23 Impeccable workflows with deterministic precedence', () => {
+  test('Installed artifact exposes all 23 commands while keeping sequencing coordinator-owned', () => {
     const installedSkillPath = path.join(tempTestDir, 'antigravity-env', '.agents', 'skills', 'ask-impeccable', 'SKILL.md');
     const content = fs.readFileSync(installedSkillPath, 'utf8');
     const routes = ['craft', 'init', 'document', 'extract', 'shape', 'critique', 'audit', 'polish', 'bolder', 'quieter', 'distill', 'harden', 'onboard', 'animate', 'colorize', 'typeset', 'layout', 'delight', 'overdrive', 'clarify', 'adapt', 'optimize', 'live'];
@@ -286,11 +289,19 @@ describe('Ask Impeccable Acceptance Suite', () => {
       assert.match(content, new RegExp('/impeccable ' + route + '\\b', 'i'), 'Missing explicit route for /impeccable ' + route);
     }
 
-    assert.match(content, /Explicit command wins/i);
-    assert.match(content, /Specific transformation beats generic polish/i);
-    assert.match(content, /Technical inspection beats subjective review/i);
-    assert.match(content, /Plan versus implement/i);
-    assert.match(content, /Live mode is explicit/i);
+    assert.match(content, /deprecated upstream alias/i, 'craft must reflect upstream deprecation');
+    assert.match(content, /Known chain.*batch it in one prompt\/session/is, 'Known chains should be batched');
+    assert.match(content, /Finding-dependent chain/i, 'Finding-dependent chains must stop before unknown commands');
+    assert.match(content, /User explicitly names several commands/i, 'Explicit multi-command requests should preserve order');
+    assert.match(content, /batch them unless a real boundary requires a split/i, 'Safe batching should be the default');
+    assert.match(content, /Command asks a question/i, 'Questions must be boundary-aware');
+    assert.match(content, /same worker may continue the remaining batch/i, 'Answered questions may resume the same safe batch');
+    assert.match(content, /\/impeccable audit blog/i, 'Must include upstream-style scoped command example');
+    assert.match(content, /\/impeccable critique landing/i, 'Must include upstream README example semantics');
+
+
+
+
   });
 
   test('.upstream remains excluded and untracked', () => {

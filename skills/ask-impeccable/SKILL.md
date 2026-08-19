@@ -1,88 +1,145 @@
 ---
 name: ask-impeccable
-description: Frontend and UI workflow router for Impeccable. Use for planning, building, critiquing, auditing, polishing, or refactoring web/mobile interfaces; design-system setup or extraction; onboarding, UX copy, typography, layout, color, motion, responsive adaptation, accessibility, performance, edge cases, or live browser iteration. Route each UI intent to the matching Impeccable workflow. Also activate when the user explicitly mentions ask-impeccable or requests UI/UX guidance.
+description: Coordinator for Impeccable UI workflows executed inside coding workers for frontend interfaces. Use when the user invokes ask-impeccable or wants UI/UX work delegated through upstream /impeccable commands. Start a new coordinated workflow with /impeccable init unless the user explicitly skips it. Prefer batching a coherent serial command chain in one worker prompt/session when the commands can run without a decision boundary; split only when user input, failure, scope change, independent review, or orchestration policy requires it. Never replace commands with coordinator-authored UI briefs or coordinator-side design work.
 ---
 
 # Ask Impeccable
 
-Route frontend and UI/UX work to the most specific Impeccable workflow.
+Act as the coordinator for upstream Impeccable. The coding worker invokes the actual `/impeccable ...` commands and owns the UI analysis or edits produced by them.
 
-## Dependency Guard (Recovery-First)
+## Hard invariants
 
-Ask Impeccable requires the `impeccable` skill/tool to be present in the active agent environment.
+1. **Init first.** The first command in a new Ask Impeccable workflow is `/impeccable init`, with no target argument, unless the user explicitly says to skip init.
+2. **Native commands only.** Put the exact `/impeccable ...` invocations in the worker prompt. Do not paraphrase them into a design brief, audit checklist, or manual implementation plan.
+3. **Batch when safe.** Prefer one worker Task/Dispatch/session for a coherent command chain that can run serially in the same context.
+4. **Serial inside the batch.** The worker must let each command finish before invoking the next command. Never run overlapping mutating Impeccable commands concurrently.
+5. **Split only at a real boundary.** Start a fresh Task/session only when a command needs user input or coordinator choice before continuing, fails, materially changes scope, requires independent review/fresh context, or the active orchestration policy requires separation.
+6. **Coordinator does not design.** Do not perform coordinator-side UI research, critique, audit, styling, or product-file edits. Express UI work through Impeccable commands.
+7. **Use native state only.** Do not create `.ask-impeccable/` state. Rely on Impeccable artifacts, repository state, and orchestration state.
 
-Before executing any UI workflow:
-1. Check whether `impeccable` is available in the agent's installed skills, tools, or commands.
-2. If `impeccable` is **missing**:
-   - Tell the user exactly what is missing and provide the canonical install command:
-     `npx skills add pbakaus/impeccable`
-   - If the current environment permits shell execution and skill installation, and the user has not prohibited installs, install it automatically from the project root with the non-interactive form:
-     `npx skills add pbakaus/impeccable --skill impeccable -y`
-   - If the current agent identifier is known and the Skills CLI supports explicit targeting, add `--agent <current-agent>` to the automatic install command.
-   - After the install command succeeds, **re-check** whether `impeccable` is now discoverable in the active environment.
-   - If the re-check succeeds, continue the user's original UI workflow in the same turn. Do not make the user repeat the request.
-   - If installation succeeds but the current harness does not hot-reload newly installed skills, tell the user that installation succeeded, ask them to reload/restart the harness once, and then resume the original request after reload.
-   - If installation is blocked, unavailable, or fails, report the exact command above plus the concrete failure. Stop only because the dependency is still unavailable.
-3. **Do NOT emulate, improvise, or fabricate fallback Impeccable behavior while the dependency is unavailable.**
+## Dependency and transport
 
-## State Management
+- The target worker environment must expose the upstream `impeccable` skill before dispatch.
+- Prefer the upstream installer from the project root when installation is needed: `npx impeccable install`. Resolve provider/scope flags from the live CLI instead of guessing.
+- After install/update, re-check that the worker can discover Impeccable. If the harness requires reload, use a fresh worker after reload.
+- Never fabricate Impeccable behavior while the dependency is unavailable.
+- For supervised AGY work on a local repository, invoke the installed `orca-orchestrator` Skill and follow its current AGY policy, lifecycle, delivery marker, WIP safety, and completion rules.
+- If the user names another worker, use that worker through the appropriate current orchestration path while preserving this skill's command-batching rules.
 
-- Ask Impeccable maintains **no persistent state** of its own.
-- Do not create `.ask-impeccable/` directories or parallel state files in the workspace.
-- Rely solely on project files and Impeccable's native mechanisms.
+## Coordinator workflow
 
-## Workflow Dispatch
+### 1. Build the command queue
 
-When `impeccable` is available, route the request to the most specific Impeccable command. If the user explicitly names an Impeccable subcommand, use that command unless it conflicts with an explicit safety or scope constraint.
+Translate the user's UI goal only into upstream Impeccable commands, not into substitute design instructions.
 
-### Intent Routing
+- Begin with `/impeccable init` unless explicitly skipped.
+- Preserve any commands the user explicitly named and their requested order.
+- For a broad goal, choose commands from the routing table below. Batch commands whose order is already known; defer commands whose choice depends on earlier findings.
+- Keep the target concise and concrete, such as `dashboard`, `settings`, `checkout`, `landing`, or `the campaign table`.
 
-| User intent | Route |
+Example of a safe known queue:
+
+```text
+/impeccable init
+/impeccable audit dashboard
+/impeccable critique dashboard
+/impeccable optimize dashboard
+/impeccable polish dashboard
+```
+
+### 2. Dispatch the batch
+
+When the known queue can run coherently in one context, create one worker Task/Dispatch/session and include the commands verbatim in order.
+
+The worker task should stay minimal: exact command lines, repository/worktree scope, lifecycle marker, and safety constraints required by the active orchestration skill. Do not add coordinator-authored UI requirements that compete with Impeccable.
+
+Use a task shape like:
+
+```text
+Run these Impeccable commands from the project root, strictly in order:
+/impeccable init
+/impeccable audit dashboard
+/impeccable critique dashboard
+/impeccable optimize dashboard
+/impeccable polish dashboard
+
+Let each command complete before starting the next.
+If a command needs user/coordinator input, fails, or makes the remaining queue invalid, stop at that boundary and use the orchestration ask/escalation path instead of guessing.
+Preserve existing WIP and repository instructions. Report structured completion with evidence for each command.
+```
+
+Do not create a new worker merely because one command ended if the next queued command is already known and can safely continue in the same session.
+
+### 3. Handle boundaries
+
+A boundary interrupts the current command queue. Treat these as boundaries:
+
+- Impeccable asks for product facts, approval, or another user decision before later commands can be correct.
+- A command fails or its required output is incomplete.
+- The result materially changes the target or makes the remaining queued commands inappropriate.
+- The next step is an independent review that should not inherit the implementer's context.
+- The active orchestration policy explicitly requires a fresh worker/session.
+
+At a boundary, settle or pause the current lifecycle as appropriate, resolve the question/failure, then create a fresh Task/session only if needed. Do not blindly continue the stale queue.
+
+### 4. Verify completion
+
+When the batch finishes:
+
+1. Accept only the matching structured worker completion required by the active orchestration policy.
+2. Verify repository/artifact state independently when the workflow requires it.
+3. Confirm which `/impeccable ...` commands actually ran and which were skipped or interrupted.
+4. If more UI work remains, either dispatch another safe batch or a single command based on the new evidence.
+
+## Command routing
+
+Honor an explicitly named command. Otherwise select the command or known serial chain that best matches the requested work.
+
+| Intent | Impeccable command |
 |---|---|
-| Build or substantially redesign a UI end-to-end, including visual iteration | `/impeccable craft` |
-| Initialize Impeccable project context, PRODUCT.md/DESIGN.md, or live-mode setup | `/impeccable init` |
-| Generate or refresh root DESIGN.md from existing project code | `/impeccable document` |
-| Extract reusable components, patterns, or tokens into a design system | `/impeccable extract` |
-| Plan, shape, or specify UX/UI before implementation | `/impeccable shape` |
-| Review hierarchy, clarity, usability, information architecture, or emotional quality | `/impeccable critique` |
-| Check accessibility, responsive behavior, performance, or technical UI quality | `/impeccable audit` |
-| Run a broad final design-system alignment and shipping-readiness pass | `/impeccable polish` |
-| Make a bland, timid, or generic design more expressive | `/impeccable bolder` |
-| Tone down an overly loud, dense, or aggressive design | `/impeccable quieter` |
-| Remove unnecessary complexity and reduce the interface to its essentials | `/impeccable distill` |
-| Harden error states, edge cases, i18n, overflow, and resilience | `/impeccable harden` |
-| Improve first-run flows, activation, onboarding, or empty states | `/impeccable onboard` |
-| Add or improve purposeful motion and transitions | `/impeccable animate` |
-| Improve the color system, contrast strategy, or color usage | `/impeccable colorize` |
-| Improve fonts, type scale, hierarchy, rhythm, or typographic details | `/impeccable typeset` |
-| Fix layout, spacing, alignment, grids, density, or visual rhythm | `/impeccable layout` |
-| Add tasteful micro-interactions, personality, or moments of delight | `/impeccable delight` |
-| Add ambitious, technically extraordinary visual effects | `/impeccable overdrive` |
-| Improve UX copy, labels, instructions, errors, or interface clarity | `/impeccable clarify` |
-| Adapt the interface for mobile, tablet, desktop, or other device contexts | `/impeccable adapt` |
-| Improve frontend runtime/loading/render performance | `/impeccable optimize` |
-| Iterate on visual variants directly in a browser/live visual workflow | `/impeccable live` |
+| Capture or refresh durable product context | `/impeccable init` |
+| Plan UX/UI before implementation | `/impeccable shape <target>` |
+| Record the incumbent design system | `/impeccable document` |
+| Extract reusable tokens/components | `/impeccable extract <target>` |
+| UX/hierarchy/clarity review | `/impeccable critique <target>` |
+| Accessibility/performance/responsive audit | `/impeccable audit <target>` |
+| Final quality/shipping pass | `/impeccable polish <target>` |
+| Make a bland design more expressive | `/impeccable bolder <target>` |
+| Tone down an aggressive design | `/impeccable quieter <target>` |
+| Remove unnecessary complexity | `/impeccable distill <target>` |
+| Harden errors, i18n, overflow, edge cases | `/impeccable harden <target>` |
+| Improve first-run/empty/activation flows | `/impeccable onboard <target>` |
+| Add purposeful motion | `/impeccable animate <target>` |
+| Improve strategic color usage | `/impeccable colorize <target>` |
+| Improve typography | `/impeccable typeset <target>` |
+| Fix spacing/layout/rhythm | `/impeccable layout <target>` |
+| Add tasteful personality | `/impeccable delight <target>` |
+| Add technically ambitious effects | `/impeccable overdrive <target>` |
+| Improve UX copy and labels | `/impeccable clarify <target>` |
+| Adapt to device/screen contexts | `/impeccable adapt <target>` |
+| Diagnose and fix UI performance | `/impeccable optimize <target>` |
+| Iterate visually in the browser | `/impeccable live` |
+| User explicitly asks for deprecated craft alias | `/impeccable craft <target>` |
 
-### Routing Precedence
+`craft` is a deprecated upstream alias for ordinary new-work behavior. Do not make it the default for every redesign. For direct new-work language that does not map cleanly to a named command, the worker may invoke `/impeccable <description>` after init.
 
-Apply these rules when multiple routes appear plausible:
-1. **Explicit command wins.** Honor an explicitly named Impeccable subcommand.
-2. **Specific transformation beats generic polish.** Prefer `typeset`, `layout`, `colorize`, `animate`, `adapt`, `optimize`, `clarify`, `harden`, `onboard`, `bolder`, `quieter`, `distill`, `delight`, or `overdrive` over `polish` when the request names that specific problem.
-3. **Technical inspection beats subjective review.** Route accessibility, performance, and responsive-quality checks to `audit`; route hierarchy, clarity, usability, and design-quality review to `critique`.
-4. **Plan versus implement.** Route planning-only requests to `shape`; route requests to build or materially redesign the interface to `craft`. Do not run a separate `shape` first when `craft` already covers the requested shape-then-build flow unless the user asks for a planning checkpoint.
-5. **Project/design-system operations are deliberate.** Use `init`, `document`, or `extract` only when the user requests or clearly implies that project-level/design-system operation.
-6. **Live mode is explicit.** Use `live` only when the user asks for browser/live visual iteration or when that interaction mode is clearly required.
-7. **Multi-part requests may chain.** Use only the commands needed for distinct requested intents; run critique/audit before corrective transformations when diagnosis is required, and use `polish` last for a broad finishing pass.
+## Sequencing guidance
 
-## Read-Only UI Research Layer
-Ask Impeccable includes a built-in read-only UI research retrieval layer powered by BM25 search over approved domain datasets:
-- **Domains**: `style`, `color`, `chart`, `landing`, `product`, `ux`, `typography`, `icons`, `react`, `web`, `google-fonts`
-- **Stacks**: `react`, `nextjs`, `vue`, `svelte`, `astro`, `swiftui`, `react-native`, `flutter`, `nuxtjs`, `nuxt-ui`, `html-tailwind`, `shadcn`, `jetpack-compose`, `threejs`, `angular`, `laravel`, `javafx`, `wpf`, `winui`, `avalonia`, `uno`, `uwp`
-- **Usage**:
-  ```bash
-  node research/search.mjs "<query>" [--domain <domain>] [--stack <stack>] [--max-results 3] [--json]
-  ```
-- **Properties**:
-  - Zero runtime dependencies (Node.js built-ins only).
-  - Purely read-only; performs zero project-file writes or mutations.
-  - Informational lookup only; does not generate design systems, overrides, or templates.
+- **Known chain:** batch it in one prompt/session and execute strictly in order.
+- **Finding-dependent chain:** batch only the known prefix, then stop and choose the next command from evidence.
+- **User explicitly names several commands:** preserve their order and batch them unless a real boundary requires a split.
+- **Command recommends another command:** continue in the same session only when the recommendation is unambiguous and does not require coordinator/user judgment; otherwise stop at the boundary.
+- **Command asks a question:** use orchestration ask/reply; after the answer, the same worker may continue the remaining batch if still valid.
+- **Command fails:** stop the batch. Diagnose before retrying; do not skip ahead.
+
+## Forbidden patterns
+
+- Do not replace `/impeccable audit dashboard` with a coordinator-authored accessibility/performance checklist.
+- Do not write a detailed UI redesign brief and tell the worker to "use Impeccable somehow".
+- Do not force one-command-per-session churn when a serial command batch can run coherently in one worker context.
+- Do not parallelize mutating commands over the same UI scope.
+- Do not invent a next command when the previous result creates a material decision boundary.
+
+## Upstream contract
+
+Impeccable exposes one skill with 23 named commands plus direct-description usage. Start new project work with `/impeccable init`; later commands accept their own optional targets, for example `/impeccable audit blog`, `/impeccable critique landing`, `/impeccable polish settings`, and `/impeccable harden checkout`.

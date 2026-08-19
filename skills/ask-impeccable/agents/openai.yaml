@@ -1,7 +1,7 @@
 interface:
   display_name: "Ask Impeccable"
-  short_description: "Frontend and UI workflow router. Routes design, component, polish, and UX tasks to Impeccable."
-  default_prompt: "Use $ask-impeccable to route and guide frontend/UI design, development, critique, audit, or polish tasks."
+  short_description: "Coordinates Impeccable UI command batches in coding workers."
+  default_prompt: "Use $ask-impeccable to coordinate explicit /impeccable commands in coding workers: start with /impeccable init, batch known serial commands when safe, and split only at real decision or failure boundaries."
 
 policy:
   allow_implicit_invocation: true
