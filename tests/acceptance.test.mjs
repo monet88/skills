@@ -255,30 +255,26 @@ describe('Ask Impeccable Acceptance Suite', () => {
     assert.deepEqual(claudeYaml.policy.products, ['chatgpt', 'codex']);
   });
 
-  test('Installed artifact enforces dependency guard, fallback ban, no persistent state, and Monet setup guidance', () => {
+  test('Installed artifact uses recovery-first dependency installation, fallback ban, and no persistent state', () => {
     const installedSkillPath = path.join(tempTestDir, 'antigravity-env', '.agents', 'skills', 'ask-impeccable', 'SKILL.md');
     const content = fs.readFileSync(installedSkillPath, 'utf8');
 
-    // Model metadata targets frontend/UI routing & allows explicit invocation
     const parsed = parseFrontmatter(content);
     assert.match(parsed.data.description, /UI|Frontend|workflow/i, 'Metadata must target UI/frontend');
     assert.match(parsed.data.description, /ask-impeccable/i, 'Metadata must mention explicit invocation');
 
-    // Strict dependency guard on Impeccable
     assert.match(content, /impeccable/i, 'Must mention impeccable dependency');
     assert.match(content, /missing/i, 'Must specify behavior when impeccable is missing');
-
-    // No fallback emulation / improvisation
+    assert.match(content, /npx skills add pbakaus\/impeccable/, 'Must provide the canonical Impeccable install command');
+    assert.match(content, /--skill impeccable -y/, 'Must provide a non-interactive automatic install form');
+    assert.match(content, /re-check/i, 'Must re-check dependency availability after installation');
+    assert.match(content, /continue the user'?s original UI workflow/i, 'Must continue the original workflow after recovery');
     assert.match(content, /do not (emulate|improvise|fabricate)/i, 'Must strictly forbid fallback improvisation');
+    assert.doesNotMatch(content, /Halt immediately/i, 'Missing dependency must use recovery-first flow, not unconditional halt');
 
-    // Monet setup guidance is conditional upon discoverability
-    assert.match(content, /discoverable/i, 'Monet setup guidance must check discoverability first');
-
-    // No persistent state
     assert.match(content, /no persistent state/i, 'Must explicitly state no persistent state');
     assert.match(content, /\.ask-impeccable/i, 'Must explicitly forbid .ask-impeccable state dirs');
   });
-
   test('.upstream remains excluded and untracked', () => {
     const gitignorePath = path.join(REPO_ROOT, '.gitignore');
     const gitignoreContent = fs.readFileSync(gitignorePath, 'utf8');

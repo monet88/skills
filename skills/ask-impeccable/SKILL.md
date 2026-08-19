@@ -14,20 +14,23 @@ Activate Ask Impeccable when:
 - Working on responsive layouts, design tokens, styling, typography, colors, animations, or UX flows.
 - The user explicitly invokes `ask-impeccable`, `/ask-impeccable`, or asks for UI/UX guidance.
 
-## Dependency Guard (Strict)
+## Dependency Guard (Recovery-First)
 
 Ask Impeccable requires the `impeccable` skill/tool to be present in the active agent environment.
 
 Before executing any UI workflow:
-1. Check if `impeccable` is available in the agent's installed skills, tools, or commands.
+1. Check whether `impeccable` is available in the agent's installed skills, tools, or commands.
 2. If `impeccable` is **missing**:
-   - **Halt immediately** and report the missing dependency explicitly:
-     `Error: Impeccable dependency is required but not installed in the current environment.`
-   - **Do NOT emulate or improvise fallback design rules or Impeccable behaviors.**
-   - **Monet setup guidance**:
-     - Check if an approved Monet setup capability is discoverable in the environment (e.g. `setup-monet` skill or command).
-     - If discoverable: advise the user to run the Monet setup path (e.g. `Run 'setup-monet' or install via 'npx skills add monet88/skills'`).
-     - If NOT discoverable: state the missing dependency clearly without inventing an unverified setup command.
+   - Tell the user exactly what is missing and provide the canonical install command:
+     `npx skills add pbakaus/impeccable`
+   - If the current environment permits shell execution and skill installation, and the user has not prohibited installs, install it automatically from the project root with the non-interactive form:
+     `npx skills add pbakaus/impeccable --skill impeccable -y`
+   - If the current agent identifier is known and the Skills CLI supports explicit targeting, add `--agent <current-agent>` to the automatic install command.
+   - After the install command succeeds, **re-check** whether `impeccable` is now discoverable in the active environment.
+   - If the re-check succeeds, continue the user's original UI workflow in the same turn. Do not make the user repeat the request.
+   - If installation succeeds but the current harness does not hot-reload newly installed skills, tell the user that installation succeeded, ask them to reload/restart the harness once, and then resume the original request after reload.
+   - If installation is blocked, unavailable, or fails, report the exact command above plus the concrete failure. Stop only because the dependency is still unavailable.
+3. **Do NOT emulate, improvise, or fabricate fallback Impeccable behavior while the dependency is unavailable.**
 
 ## State Management
 
