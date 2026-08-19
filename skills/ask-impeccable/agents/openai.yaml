@@ -1,0 +1,10 @@
+interface:
+  display_name: "Ask Impeccable"
+  short_description: "Frontend and UI workflow router. Routes design, component, polish, and UX tasks to Impeccable."
+  default_prompt: "Use $ask-impeccable to route and guide frontend/UI design, development, critique, audit, or polish tasks."
+
+policy:
+  allow_implicit_invocation: true
+  products:
+    - chatgpt
+    - codex
