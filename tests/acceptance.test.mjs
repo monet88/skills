@@ -275,6 +275,24 @@ describe('Ask Impeccable Acceptance Suite', () => {
     assert.match(content, /no persistent state/i, 'Must explicitly state no persistent state');
     assert.match(content, /\.ask-impeccable/i, 'Must explicitly forbid .ask-impeccable state dirs');
   });
+  test('Installed artifact routes all 23 Impeccable workflows with deterministic precedence', () => {
+    const installedSkillPath = path.join(tempTestDir, 'antigravity-env', '.agents', 'skills', 'ask-impeccable', 'SKILL.md');
+    const content = fs.readFileSync(installedSkillPath, 'utf8');
+    const routes = ['craft', 'init', 'document', 'extract', 'shape', 'critique', 'audit', 'polish', 'bolder', 'quieter', 'distill', 'harden', 'onboard', 'animate', 'colorize', 'typeset', 'layout', 'delight', 'overdrive', 'clarify', 'adapt', 'optimize', 'live'];
+
+    assert.equal(routes.length, 23);
+    assert.equal(new Set(routes).size, 23, 'Routing contract must contain 23 unique commands');
+    for (const route of routes) {
+      assert.match(content, new RegExp('/impeccable ' + route + '\\b', 'i'), 'Missing explicit route for /impeccable ' + route);
+    }
+
+    assert.match(content, /Explicit command wins/i);
+    assert.match(content, /Specific transformation beats generic polish/i);
+    assert.match(content, /Technical inspection beats subjective review/i);
+    assert.match(content, /Plan versus implement/i);
+    assert.match(content, /Live mode is explicit/i);
+  });
+
   test('.upstream remains excluded and untracked', () => {
     const gitignorePath = path.join(REPO_ROOT, '.gitignore');
     const gitignoreContent = fs.readFileSync(gitignorePath, 'utf8');
