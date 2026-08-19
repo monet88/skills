@@ -38,3 +38,17 @@ Before executing any UI workflow:
 ## Workflow Dispatch
 
 When `impeccable` is available, delegate the UI request to the corresponding Impeccable workflow or command.
+
+## Read-Only UI Research Layer
+
+Ask Impeccable includes a built-in read-only UI research retrieval layer powered by BM25 search over approved domain datasets:
+- **Domains**: `style`, `color`, `chart`, `landing`, `product`, `ux`, `typography`, `icons`, `react`, `web`, `google-fonts`
+- **Stacks**: `react`, `nextjs`, `vue`, `svelte`, `astro`, `swiftui`, `react-native`, `flutter`, `nuxtjs`, `nuxt-ui`, `html-tailwind`, `shadcn`, `jetpack-compose`, `threejs`, `angular`, `laravel`, `javafx`, `wpf`, `winui`, `avalonia`, `uno`, `uwp`
+- **Usage**:
+  ```bash
+  node research/search.mjs "<query>" [--domain <domain>] [--stack <stack>] [--max-results 3] [--json]
+  ```
+- **Properties**:
+  - Zero runtime dependencies (Node.js built-ins only).
+  - Purely read-only; performs zero project-file writes or mutations.
+  - Informational lookup only; does not generate design systems, overrides, or templates.

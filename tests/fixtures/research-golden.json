@@ -1,0 +1,1675 @@
+{
+  "detect_domain": {
+    "hero landing conversion": "landing",
+    "button hex color token": "color",
+    "bar graph trend visualization": "chart",
+    "saas healthcare crm dashboard": "product",
+    "brutalism css minimalism": "style",
+    "touch scroll wcag usability": "ux",
+    "heading font typography pairing": "typography",
+    "noto serif font family": "google-fonts",
+    "lucide symbol glyph icon": "icons",
+    "nextjs suspense waterfall rerender": "react",
+    "aria outline semantic autocomplete": "web",
+    "random unrecognized text without keywords": "style",
+    "e-commerce marketplace": "product",
+    "font pairing for mobile": "ux",
+    "color and style mixed keywords": "color"
+  },
+  "search": [
+    {
+      "query": "minimalist dashboard",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "product",
+        "query": "minimalist dashboard",
+        "file": "products.csv",
+        "count": 3,
+        "results": [
+          {
+            "Product Type": "Analytics Dashboard",
+            "Keywords": "admin, analytics, dashboard, data, panel",
+            "Primary Style Recommendation": "Data-Dense + Heat Map & Heatmap",
+            "Secondary Styles": "Minimalism, Dark Mode (OLED)",
+            "Landing Page Pattern": "N/A - Analytics focused",
+            "Dashboard Style (if applicable)": "Drill-Down Analytics + Comparative",
+            "Color Palette Focus": "Cool→Hot gradients + neutral grey"
+          },
+          {
+            "Product Type": "Financial Dashboard",
+            "Keywords": "admin, analytics, dashboard, data, financial, panel",
+            "Primary Style Recommendation": "Dark Mode (OLED) + Data-Dense",
+            "Secondary Styles": "Minimalism, Accessible & Ethical",
+            "Landing Page Pattern": "N/A - Dashboard focused",
+            "Dashboard Style (if applicable)": "Financial Dashboard",
+            "Color Palette Focus": "Dark bg + red/green alerts + trust blue"
+          },
+          {
+            "Product Type": "Smart Home/IoT Dashboard",
+            "Keywords": "admin, analytics, dashboard, data, home, iot, panel, smart",
+            "Primary Style Recommendation": "Glassmorphism + Dark Mode (OLED)",
+            "Secondary Styles": "Minimalism, AI-Native UI",
+            "Landing Page Pattern": "Interactive Product Demo",
+            "Dashboard Style (if applicable)": "Real-Time Monitoring",
+            "Color Palette Focus": "Dark + Status indicator colors"
+          }
+        ]
+      }
+    },
+    {
+      "query": "color palette dark mode",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "color",
+        "query": "color palette dark mode",
+        "file": "colors.csv",
+        "count": 3,
+        "results": [
+          {
+            "Product Type": "Podcast Platform",
+            "Primary": "#1E1B4B",
+            "On Primary": "#FFFFFF",
+            "Secondary": "#312E81",
+            "On Secondary": "#FFFFFF",
+            "Accent": "#F97316",
+            "On Accent": "#0F172A",
+            "Background": "#0F0F23",
+            "Foreground": "#F8FAFC",
+            "Card": "#1B1B30",
+            "Card Foreground": "#F8FAFC",
+            "Muted": "#27273B",
+            "Muted Foreground": "#94A3B8",
+            "Border": "#4338CA",
+            "Destructive": "#EF4444",
+            "On Destructive": "#FFFFFF",
+            "Ring": "#1E1B4B",
+            "Notes": "Dark audio + warm accent"
+          },
+          {
+            "Product Type": "Music Streaming",
+            "Primary": "#1E1B4B",
+            "On Primary": "#FFFFFF",
+            "Secondary": "#4338CA",
+            "On Secondary": "#FFFFFF",
+            "Accent": "#22C55E",
+            "On Accent": "#0F172A",
+            "Background": "#0F0F23",
+            "Foreground": "#F8FAFC",
+            "Card": "#1B1B30",
+            "Card Foreground": "#F8FAFC",
+            "Muted": "#27273B",
+            "Muted Foreground": "#94A3B8",
+            "Border": "#312E81",
+            "Destructive": "#EF4444",
+            "On Destructive": "#FFFFFF",
+            "Ring": "#1E1B4B",
+            "Notes": "Dark audio + play green"
+          },
+          {
+            "Product Type": "Theater/Cinema",
+            "Primary": "#1E1B4B",
+            "On Primary": "#FFFFFF",
+            "Secondary": "#312E81",
+            "On Secondary": "#FFFFFF",
+            "Accent": "#CA8A04",
+            "On Accent": "#0F172A",
+            "Background": "#0F0F23",
+            "Foreground": "#F8FAFC",
+            "Card": "#1B1B30",
+            "Card Foreground": "#F8FAFC",
+            "Muted": "#27273B",
+            "Muted Foreground": "#94A3B8",
+            "Border": "#4338CA",
+            "Destructive": "#EF4444",
+            "On Destructive": "#FFFFFF",
+            "Ring": "#1E1B4B",
+            "Notes": "Dramatic dark + spotlight gold"
+          }
+        ]
+      }
+    },
+    {
+      "query": "hero conversion section",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "landing",
+        "query": "hero conversion section",
+        "file": "landing.csv",
+        "count": 3,
+        "results": [
+          {
+            "Pattern Name": "Funnel (3-Step Conversion)",
+            "Keywords": "funnel, conversion, conversion-optimized, conversion optimized, steps, wizard, onboarding",
+            "Section Order": "1. Hero, 2. Step 1 (problem), 3. Step 2 (solution), 4. Step 3 (action), 5. CTA progression",
+            "Primary CTA Placement": "Each step: mini-CTA. Final: main CTA",
+            "Color Strategy": "Step colors: 1 (Red/Problem), 2 (Orange/Process), 3 (Green/Solution). CTA: Brand color",
+            "Conversion Optimization": "Progressive disclosure. Show only essential info per step. Use progress indicators. Multiple CTAs."
+          },
+          {
+            "Pattern Name": "Trust & Authority + Conversion",
+            "Keywords": "trust & authority, trust, authority, conversion, credibility, enterprise",
+            "Section Order": "1. Hero (mission/credibility), 2. Proof (logos, certs, stats), 3. Solution overview, 4. Clear CTA path",
+            "Primary CTA Placement": "Contact Sales / Get Quote (primary) + Nav",
+            "Color Strategy": "Navy/Grey corporate. Trust blue. Accent for CTA only.",
+            "Conversion Optimization": "Security badges. Case studies. Transparent pricing. Low-friction form."
+          },
+          {
+            "Pattern Name": "Video-First Hero",
+            "Keywords": "video, hero, media, visual, engaging",
+            "Section Order": "1. Hero with video background, 2. Key features overlay, 3. Benefits section, 4. CTA",
+            "Primary CTA Placement": "Overlay on video (center/bottom) + Bottom section",
+            "Color Strategy": "Dark overlay 60% on video. Brand accent for CTA. White text on dark.",
+            "Conversion Optimization": "86% higher engagement with video. Add captions for accessibility. Compress video for performance."
+          }
+        ]
+      }
+    },
+    {
+      "query": "bar chart time series",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "chart",
+        "query": "bar chart time series",
+        "file": "charts.csv",
+        "count": 3,
+        "results": [
+          {
+            "Data Type": "Trend Over Time",
+            "Keywords": "trend, time-series, line, growth, timeline, progress",
+            "Best Chart Type": "Line Chart",
+            "Secondary Options": "Area Chart, Smooth Area",
+            "When to Use": "Data has a time axis; user needs to observe rise/fall trends or rate of change over a continuous period",
+            "When NOT to Use": "Fewer than 4 data points (use stat card); more than 6 series (visual noise); no time dimension exists",
+            "Data Volume Threshold": "<1000 pts: SVG; ≥1000 pts: Canvas + downsampling; >10000: aggregate to intervals",
+            "Color Guidance": "Primary: #0080FF. Multiple series: distinct colors + distinct line styles. Fill: 20% opacity",
+            "Accessibility Grade": "AA",
+            "Accessibility Notes": "Differentiate series by line style (solid/dashed/dotted) not color alone. Add pattern overlays for colorblind users.",
+            "A11y Fallback": "Dashed/dotted lines per series; togglable data table with timestamps and values",
+            "Library Recommendation": "Chart.js, Recharts, ApexCharts",
+            "Interactive Level": "Hover + Zoom"
+          },
+          {
+            "Data Type": "Anomaly Detection",
+            "Keywords": "anomaly, outlier, spike, alert, detection, monitoring, deviation",
+            "Best Chart Type": "Line Chart with Highlights",
+            "Secondary Options": "Scatter with Alert",
+            "When to Use": "Monitoring a time-series for outliers; alerting users to unexpected spikes or dips in operational data",
+            "When NOT to Use": "Anomalies are predefined categories (use bar with highlight); real-time context without a pause control",
+            "Data Volume Threshold": "Stream at ≤60fps with Canvas; batch: up to 10,000 pts; mark anomalies as a separate data layer",
+            "Color Guidance": "Normal: #0080FF solid line. Anomaly marker: #FF0000 circle + filled. Alert band: #FFF3CD background zone",
+            "Accessibility Grade": "AA",
+            "Accessibility Notes": "Use shape marker (not color only) for anomaly points. Add text annotation per anomaly event.",
+            "A11y Fallback": "Text alert annotation per anomaly; anomaly summary list panel alongside chart",
+            "Library Recommendation": "D3.js, Plotly, ApexCharts",
+            "Interactive Level": "Hover + Alert"
+          },
+          {
+            "Data Type": "Stock / Trading OHLC",
+            "Keywords": "stock, trading, ohlc, candlestick, finance, price, volume",
+            "Best Chart Type": "Candlestick Chart",
+            "Secondary Options": "OHLC Bar, Heikin-Ashi",
+            "When to Use": "Financial time-series with Open/High/Low/Close data; trading or investment product context only",
+            "When NOT to Use": "Non-financial audience; no OHLC data available (use line chart); accessibility-first context",
+            "Data Volume Threshold": "Real-time: Canvas required. Historical: paginate by time range. Max 500 candles visible at once",
+            "Color Guidance": "Bullish: #26A69A. Bearish: #EF5350. Volume bars: 40% opacity below. Body fill vs hollow for OHLC style",
+            "Accessibility Grade": "B",
+            "Accessibility Notes": "Provide OHLC data table. Colorblind: use fill vs outline pattern (bullish = filled, bearish = hollow).",
+            "A11y Fallback": "OHLC data table with sortable columns; numeric summary panel (daily change %)",
+            "Library Recommendation": "Lightweight Charts (TradingView), ApexCharts",
+            "Interactive Level": "Real-time + Hover + Zoom"
+          }
+        ]
+      }
+    },
+    {
+      "query": "wcag keyboard navigation",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "ux",
+        "query": "wcag keyboard navigation",
+        "file": "ux-guidelines.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Accessibility",
+            "Issue": "Keyboard Navigation",
+            "Platform": "Web",
+            "Description": "All functionality accessible via keyboard",
+            "Do": "Tab order matches visual order",
+            "Don't": "Keyboard traps or illogical tab order",
+            "Code Example Good": "tabIndex for custom order",
+            "Code Example Bad": "Unreachable elements",
+            "Severity": "High"
+          },
+          {
+            "Category": "Accessibility",
+            "Issue": "Skip Links",
+            "Platform": "Web",
+            "Description": "Allow keyboard users to skip navigation",
+            "Do": "Provide skip to main content link",
+            "Don't": "No skip link on nav-heavy pages",
+            "Code Example Good": "Skip to main content link",
+            "Code Example Bad": "100 tabs to reach content",
+            "Severity": "Medium"
+          },
+          {
+            "Category": "Navigation",
+            "Issue": "Sticky Navigation",
+            "Platform": "Web",
+            "Description": "Fixed nav should not obscure content",
+            "Do": "Add padding-top to body equal to nav height",
+            "Don't": "Let nav overlap first section content",
+            "Code Example Good": "pt-20 (if nav is h-20)",
+            "Code Example Bad": "No padding compensation",
+            "Severity": "Medium"
+          }
+        ]
+      }
+    },
+    {
+      "query": "font pairing modern serif",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "google-fonts",
+        "query": "font pairing modern serif",
+        "file": "google-fonts.csv",
+        "count": 3,
+        "results": [
+          {
+            "Family": "Noto Emoji",
+            "Category": "Sans Serif",
+            "Stroke": "Sans Serif",
+            "Classifications": "",
+            "Styles": "300 | 400 | 500 | 600 | 700",
+            "Variable Axes": "wght: -",
+            "Subsets": "emoji",
+            "Designers": "Google",
+            "Popularity Rank": "757",
+            "Google Fonts URL": "https://fonts.google.com/specimen/Noto+Emoji"
+          },
+          {
+            "Family": "GFS Neohellenic",
+            "Category": "Sans Serif",
+            "Stroke": "Sans Serif",
+            "Classifications": "",
+            "Styles": "400 | 400i | 700 | 700i",
+            "Variable Axes": "",
+            "Subsets": "greek | greek-ext | latin | vietnamese",
+            "Designers": "Greek Font Society",
+            "Popularity Rank": "1571",
+            "Google Fonts URL": "https://fonts.google.com/specimen/GFS+Neohellenic"
+          },
+          {
+            "Family": "Sen",
+            "Category": "Sans Serif",
+            "Stroke": "Sans Serif",
+            "Classifications": "",
+            "Styles": "400 | 500 | 600 | 700 | 800",
+            "Variable Axes": "wght: -",
+            "Subsets": "latin | latin-ext",
+            "Designers": "Kosal Sen",
+            "Popularity Rank": "331",
+            "Google Fonts URL": "https://fonts.google.com/specimen/Sen"
+          }
+        ]
+      }
+    },
+    {
+      "query": "roboto google font",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "google-fonts",
+        "query": "roboto google font",
+        "file": "google-fonts.csv",
+        "count": 3,
+        "results": [
+          {
+            "Family": "Roboto Serif",
+            "Category": "Serif",
+            "Stroke": "Serif",
+            "Classifications": "",
+            "Styles": "100 | 100i | 200 | 200i | 300 | 300i | 400 | 400i | 500 | 500i | 600 | 600i | 700 | 700i | 800 | 800i | 900 | 900i",
+            "Variable Axes": "GRAD: - | opsz: - | wdth: - | wght: -",
+            "Subsets": "cyrillic | cyrillic-ext | latin | latin-ext | vietnamese",
+            "Designers": "Commercial Type | Greg Gazdowicz",
+            "Popularity Rank": "203",
+            "Google Fonts URL": "https://fonts.google.com/specimen/Roboto+Serif"
+          },
+          {
+            "Family": "Roboto",
+            "Category": "Sans Serif",
+            "Stroke": "Sans Serif",
+            "Classifications": "",
+            "Styles": "100 | 100i | 200 | 200i | 300 | 300i | 400 | 400i | 500 | 500i | 600 | 600i | 700 | 700i | 800 | 800i | 900 | 900i",
+            "Variable Axes": "wdth: - | wght: -",
+            "Subsets": "cyrillic | cyrillic-ext | greek | greek-ext | latin | latin-ext | math | symbols | vietnamese",
+            "Designers": "Christian Robertson | ParaType | Font Bureau",
+            "Popularity Rank": "2",
+            "Google Fonts URL": "https://fonts.google.com/specimen/Roboto"
+          },
+          {
+            "Family": "Roboto Mono",
+            "Category": "Monospace",
+            "Stroke": "",
+            "Classifications": "Monospace",
+            "Styles": "100 | 100i | 200 | 200i | 300 | 300i | 400 | 400i | 500 | 500i | 600 | 600i | 700 | 700i",
+            "Variable Axes": "wght: -",
+            "Subsets": "cyrillic | cyrillic-ext | greek | latin | latin-ext | vietnamese",
+            "Designers": "Christian Robertson",
+            "Popularity Rank": "16",
+            "Google Fonts URL": "https://fonts.google.com/specimen/Roboto+Mono"
+          }
+        ]
+      }
+    },
+    {
+      "query": "lucide svg icons",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "icons",
+        "query": "lucide svg icons",
+        "file": "icons.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Style Config",
+            "Icon Name": "web3-bitcoin-icon-system",
+            "Keywords": "web3, bitcoin, defi, crypto, neon orange, holographic, blurview, phosphor, glow, fintech mobile",
+            "Library": "Phosphor (react-native)",
+            "Import Code": "import { TrendUp } from 'phosphor-react-native'",
+            "Usage": "<TrendUp size={24} weight=\"regular\" color={colors.bitcoinOrange} />",
+            "Best For": "Bitcoin DeFi Mobile style: weight=\"regular\", color={colors.bitcoinOrange} (#F7931A). Wrap icons in circular BlurView (intensity: 20) with 1px borderColor: '#F7931A' border (Holographic Node effect). shadowColor: '#F7931A' / shadowOpacity: 0.4 / shadowRadius: 8. Prefer finance/data icons (TrendUp, Wallet, Shield, Layers). All data icons use JetBrains Mono label.",
+            "Style": "Outline"
+          },
+          {
+            "Category": "Style Config",
+            "Icon Name": "bold-typography-icon-system",
+            "Keywords": "bold typography, editorial, mono label, phosphor, weight regular, minimal, icon+label required, size 20–32",
+            "Library": "Phosphor (react-native)",
+            "Import Code": "import { ArrowRight } from 'phosphor-react-native'",
+            "Usage": "<ArrowRight size={20} weight=\"regular\" color={colors.accent} />",
+            "Best For": "Bold Typography Mobile style: weight=\"regular\". Size 20px for UI controls, 32px for feature anchors. Icons MUST be paired with a Mono-stack text label (JetBrains Mono). Standalone icons only allowed for standard navigation (e.g., Back arrow). Accent color #FF3D00 only.",
+            "Style": "Outline"
+          },
+          {
+            "Category": "Style Config",
+            "Icon Name": "academia-icon-system",
+            "Keywords": "academia, library, brass, ornate, phosphor, weight thin, muted warm, scholarly, mobile",
+            "Library": "Phosphor (react-native)",
+            "Import Code": "import { BookOpen } from 'phosphor-react-native'",
+            "Usage": "<BookOpen size={22} weight=\"thin\" color={colors.brass} />",
+            "Best For": "Academia (Scholarly Mobile) style: weight=\"thin\" (thin engraved feel), color={colors.brass} (#C9A962). No sharp geometric or tech-inspired icons. Prefer book, scroll, key, quill-type icon metaphors. Wrap in circular View with 1px brass border. Avoid neon or saturated colored icons. All icon-only navigation must have an accessibilityLabel.",
+            "Style": "Outline"
+          }
+        ]
+      }
+    },
+    {
+      "query": "react suspense waterfall",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "react",
+        "query": "react suspense waterfall",
+        "file": "react-performance.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Async Waterfall",
+            "Issue": "Suspense Boundaries",
+            "Platform": "React/Next.js",
+            "Description": "Use Suspense to show wrapper UI faster while data loads",
+            "Do": "Wrap async components in Suspense boundaries",
+            "Don't": "Await data blocking entire page render",
+            "Code Example Good": "<Suspense fallback={<Skeleton />}><DataDisplay /></Suspense>",
+            "Code Example Bad": "const data = await fetchData(); return <DataDisplay data={data} />",
+            "Severity": "High"
+          },
+          {
+            "Category": "Server",
+            "Issue": "React.cache Dedup",
+            "Platform": "React/Next.js",
+            "Description": "Use React.cache() for server-side request deduplication within single request",
+            "Do": "Wrap data fetchers with cache()",
+            "Don't": "Fetch same data multiple times in tree",
+            "Code Example Good": "export const getUser = cache(async () => await db.user.find())",
+            "Code Example Bad": "export async function getUser() { return await db.user.find() }",
+            "Severity": "Medium"
+          },
+          {
+            "Category": "Async Waterfall",
+            "Issue": "API Route Optimization",
+            "Platform": "React/Next.js",
+            "Description": "In API routes start independent operations immediately even if not awaited yet",
+            "Do": "Start promises early and await late",
+            "Don't": "Sequential awaits in API handlers",
+            "Code Example Good": "const sessionP = auth(); const configP = fetchConfig(); const session = await sessionP",
+            "Code Example Bad": "const session = await auth(); const config = await fetchConfig()",
+            "Severity": "Critical"
+          }
+        ]
+      }
+    },
+    {
+      "query": "aria focus outline input",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "web",
+        "query": "aria focus outline input",
+        "file": "app-interface.csv",
+        "count": 2,
+        "results": [
+          {
+            "Category": "Forms",
+            "Issue": "Auto Focus & Next",
+            "Platform": "iOS/Android/React Native",
+            "Description": "Guide users through form fields with Next/Done flows",
+            "Do": "Use onSubmitEditing to focus next input",
+            "Don't": "Force users to tap each field manually",
+            "Code Example Good": "onSubmitEditing={() => nextRef.current?.focus()}",
+            "Code Example Bad": "// no onSubmitEditing, manual tap only",
+            "Severity": "Low"
+          },
+          {
+            "Category": "Accessibility",
+            "Issue": "Form Control Labels",
+            "Platform": "iOS/Android/React Native",
+            "Description": "All inputs must have a visible label and an accessibility label",
+            "Do": "Pair Text label with input and set accessibilityLabel",
+            "Don't": "Inputs with placeholder only",
+            "Code Example Good": "<View><Text>Email</Text><TextInput accessibilityLabel=\"Email address\" /></View>",
+            "Code Example Bad": "<TextInput placeholder=\"Email\" /></View>",
+            "Severity": "Critical"
+          }
+        ]
+      }
+    },
+    {
+      "query": "glassmorphism prompt",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "style",
+        "query": "glassmorphism prompt",
+        "file": "styles.csv",
+        "count": 3,
+        "results": [
+          {
+            "Style Category": "Cyberpunk Mobile HUD",
+            "Type": "Mobile",
+            "Keywords": "cyberpunk, neon, glitch, chamfered, orbitron, jetbrains, scanlines, crt, hud, matrix, military, decker",
+            "Primary Colors": "Void #0A0A0F, Card #12121A",
+            "Effects & Animation": "Deep void background with neon radiance, chamfered 45° corners via SVG/Skia, scanline overlay, CRT flicker opacity oscillation, glitch animations (translateX ±2), neon pulses around buttons, HUD corner brackets, terminal prompt text inputs, heavy use of blurView holographic panels",
+            "Best For": "Gaming dashboards, crypto/cyberpunk apps, sci-fi companion tools, hacker OS skins, data-heavy monitoring HUDs",
+            "Light Mode ✓": "✗ Light",
+            "Dark Mode ✓": "✓ Dark-only",
+            "Performance": "⚠ Moderate–Heavy (Skia/blur/animations)",
+            "Accessibility": "⚠ Requires careful reduced-motion handling",
+            "Framework Compatibility": "React Native 10/10, Skia 9/10, Expo 10/10",
+            "Complexity": "High",
+            "AI Prompt Keywords": "Design a Cyberpunk mobile HUD. Background #0A0A0F, card #12121A. Accents: #00FF88 (primary), #FF00FF, #00D4FF. Typography: Orbitron for headings, JetBrains Mono for data. All shapes use chamfered corners via SVG or Skia clipPath. Buttons: neon glow shadows, scale 0.98 + haptic on press, optional glitch jitter on active. Global scanline overlay (semi-transparent horizontal lines) and CRT flicker (root opacity 0.98–1). Inputs: prompt style with '>' in accent, custom blinking block cursor. HUD cards use corner brackets and subtle gradients.",
+            "CSS/Technical Keywords": "backgroundColor: '#0A0A0F', cardBg: '#12121A', accent: '#00FF88', accent2: '#FF00FF', accent3: '#00D4FF', borderColor: '#2A2A3A', destructive: '#FF3366', borderRadius: 0, chamfer via SVG path, shadowColor accent with animated radius, scanline overlay View pointerEvents='none', withRepeat glitch translateX [-2,2,0], Easing.steps(2)",
+            "Implementation Checklist": "☐ Chamfered corners used instead of radius, ☐ Scanline & CRT flicker implemented, ☐ Orbitron + JetBrains Mono typography, ☐ Neon glow shadows on primary buttons, ☐ Glitch animation on active states, ☐ Prompt-style inputs with custom cursor, ☐ HUD corner brackets implemented, ☐ Safe-area system status bar styled, ☐ Reduced motion disables glitch/flicker, ☐ Icons configured with Lucide accent color",
+            "Design System Variables": "--bg: #0A0A0F, --card: #12121A, --fg: #E0E0E0, --muted: #1C1C2E, --accent: #00FF88, --accent2: #FF00FF, --accent3: #00D4FF, --border: #2A2A3A, --destructive: #FF3366, --radius: 0px, --font-heading: Orbitron, --font-body: JetBrains Mono"
+          },
+          {
+            "Style Category": "Glassmorphism",
+            "Type": "General",
+            "Keywords": "Frosted glass, transparent, blurred background, layered, vibrant background, light source, depth, multi-layer",
+            "Primary Colors": "Translucent white: rgba(255,255,255,0.1-0.3)",
+            "Effects & Animation": "Backdrop blur (10-20px), subtle border (1px solid rgba white 0.2), light reflection, Z-depth",
+            "Best For": "Modern SaaS, financial dashboards, high-end corporate, lifestyle apps, modal overlays, navigation",
+            "Light Mode ✓": "✓ Full",
+            "Dark Mode ✓": "✓ Full",
+            "Performance": "⚠ Good",
+            "Accessibility": "⚠ Ensure 4.5:1",
+            "Framework Compatibility": "Tailwind 9/10, MUI 8/10, Chakra 8/10",
+            "Complexity": "Medium",
+            "AI Prompt Keywords": "Design a glassmorphic interface with frosted glass effect. Use backdrop blur (10-20px), translucent overlays (rgba 10-30% opacity), vibrant background colors, subtle borders, light source reflection, layered depth. Perfect for modern overlays and cards.",
+            "CSS/Technical Keywords": "backdrop-filter: blur(15px), background: rgba(255, 255, 255, 0.15), border: 1px solid rgba(255,255,255,0.2), -webkit-backdrop-filter: blur(15px), z-index layering for depth",
+            "Implementation Checklist": "☐ Backdrop-filter blur 10-20px, ☐ Translucent white 15-30% opacity, ☐ Subtle border 1px light, ☐ Vibrant background verified, ☐ Text contrast 4.5:1 checked",
+            "Design System Variables": "--blur-amount: 15px, --glass-opacity: 0.15, --border-color: rgba(255,255,255,0.2), --background: vibrant color, --text-color: light/dark based on BG"
+          },
+          {
+            "Style Category": "Bitcoin DeFi (Mobile)",
+            "Type": "Mobile",
+            "Keywords": "web3, bitcoin, defi, digital gold, fintech, wallet, orange, glassmorphism, gradient, blur, holographic, trust, precision",
+            "Primary Colors": "Bitcoin Orange #F7931A, Burnt Orange #EA580C, Digital Gold #FFD600",
+            "Effects & Animation": "Deep void + dark matter surfaces, Bitcoin orange/gold gradients for CTAs, pill buttons with glowing shadows, glassmorphic BlurView nav, monospace data rows, gradient text balances + masked orange-gold, pulsing status indicators and vertical ledger timelines, ultra-thin borders, high-precision typography",
+            "Best For": "DeFi dashboards, wallets, NFT marketplaces, Web3 social, metaverse utilities, high-tech fintech brands",
+            "Light Mode ✓": "✗ Light",
+            "Dark Mode ✓": "✓ Dark-only",
+            "Performance": "⚠ Moderate (gradients+blur)",
+            "Accessibility": "✓ WCAG AA with care",
+            "Framework Compatibility": "React Native 10/10, Expo 10/10, Reanimated 10/10",
+            "Complexity": "High",
+            "AI Prompt Keywords": "Design a Bitcoin DeFi mobile app. Background #030304, cards #0F1115, text #FFFFFF, muted #94A3B8. Primary CTA: LinearGradient #EA580C→#F7931A with orange glow shadow. Typography: Space Grotesk Bold for headings, Inter for body, JetBrains Mono for prices/hashes. Use BlurView (intensity 20) for nav bars and floating panels. Cards as 'blocks' with hairline borders and light orange glow on active. Use grid background (low-opacity 50px grid). Gradient text for key balances via MaskedView and LinearGradient orange→gold. Status indicators pulse using Reanimated. Ledger timelines drawn as vertical gradient line with pulsing dots.",
+            "CSS/Technical Keywords": "backgroundColor: '#030304', cardBg: '#0F1115', textColor: '#FFFFFF', mutedText: '#94A3B8', borderColor: 'rgba(30,41,59,0.2)', accentBitcoin: '#F7931A', accentBurnt: '#EA580C', accentGold: '#FFD600', borderRadius: 24 for cards, radiusPill: 999 for buttons, BlurView intensity 20, LinearGradient on CTAs, shadowColor '#F7931A' shadowRadius up to 10, JetBrains Mono for numeric text",
+            "Implementation Checklist": "☐ Void/dark-matter palette applied, ☐ Bitcoin orange/gold gradient buttons, ☐ BlurView nav implemented, ☐ Monospace for numeric data, ☐ Hairline borders on blocks, ☐ Gradient text on balances, ☐ Pulsing network status indicators, ☐ Ledger vertical timeline, ☐ Haptics on money actions, ☐ SafeArea + FlashList for heavy lists",
+            "Design System Variables": "--bg-void: #030304, --bg-surface: #0F1115, --fg: #FFFFFF, --fg-muted: #94A3B8, --border-dim: rgba(30,41,59,0.2), --accent-bitcoin: #F7931A, --accent-burnt: #EA580C, --accent-gold: #FFD600, --radius-card: 24px, --radius-pill: 999px, --blur-intensity: 20, --font-heading: Space Grotesk, --font-body: Inter, --font-mono: JetBrains Mono"
+          }
+        ]
+      }
+    },
+    {
+      "query": "fintech banking",
+      "domain_arg": "product",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "product",
+        "query": "fintech banking",
+        "file": "products.csv",
+        "count": 2,
+        "results": [
+          {
+            "Product Type": "Fintech/Crypto",
+            "Keywords": "banking, blockchain, crypto, defi, finance, fintech, money, nft, payment, web3",
+            "Primary Style Recommendation": "Glassmorphism + Dark Mode (OLED)",
+            "Secondary Styles": "Retro-Futurism, Motion-Driven",
+            "Landing Page Pattern": "Conversion-Optimized",
+            "Dashboard Style (if applicable)": "Real-Time Monitoring + Predictive",
+            "Color Palette Focus": "Dark tech colors + trust + vibrant accents"
+          },
+          {
+            "Product Type": "Banking/Traditional Finance",
+            "Keywords": "banking, finance, traditional",
+            "Primary Style Recommendation": "Minimalism + Accessible & Ethical",
+            "Secondary Styles": "Trust & Authority, Dark Mode (OLED)",
+            "Landing Page Pattern": "Trust & Authority + Feature-Rich",
+            "Dashboard Style (if applicable)": "Financial Dashboard",
+            "Color Palette Focus": "Navy (#0A1628) + Trust Blue + Gold accents"
+          }
+        ]
+      }
+    },
+    {
+      "query": "cyberpunk neon",
+      "domain_arg": "style",
+      "max_results_arg": 2,
+      "expected": {
+        "domain": "style",
+        "query": "cyberpunk neon",
+        "file": "styles.csv",
+        "count": 2,
+        "results": [
+          {
+            "Style Category": "Retro-Futurism",
+            "Type": "General",
+            "Keywords": "Vintage sci-fi, 80s aesthetic, neon glow, geometric patterns, CRT scanlines, pixel art, cyberpunk, synthwave",
+            "Primary Colors": "Neon Blue #0080FF, Hot Pink #FF006E, Cyan #00FFFF, Deep Black #1A1A2E, Purple #5D34D0",
+            "Effects & Animation": "CRT scanlines (::before overlay), neon glow (text-shadow+box-shadow), glitch effects (skew/offset keyframes)",
+            "Best For": "Gaming, entertainment, music platforms, tech brands, artistic projects, nostalgic, cyberpunk",
+            "Light Mode ✓": "✓ Full",
+            "Dark Mode ✓": "✓ Dark focused",
+            "Performance": "⚠ Moderate",
+            "Accessibility": "⚠ High contrast/strain",
+            "Framework Compatibility": "Tailwind 8/10, CSS-in-JS 9/10",
+            "Complexity": "Medium",
+            "AI Prompt Keywords": "Build a retro-futuristic (cyberpunk/vaporwave) interface with neon colors (blue, pink, cyan), deep black background, 80s aesthetic, CRT scanlines, glitch effects, neon glow text/borders, monospace fonts, geometric patterns. Use neon text-shadow and animated glitch effects.",
+            "CSS/Technical Keywords": "color: neon colors (#0080FF, #FF006E, #00FFFF), text-shadow: 0 0 10px neon, background: #000 or #1A1A2E, font-family: monospace, animation: glitch (skew+offset), filter: hue-rotate",
+            "Implementation Checklist": "☐ Neon colors used, ☐ CRT scanlines effect, ☐ Glitch animations active, ☐ Monospace font, ☐ Deep black background, ☐ Glow effects applied, ☐ 80s patterns present",
+            "Design System Variables": "--neon-colors: #0080FF #FF006E #00FFFF, --background: #000000, --font-family: monospace, --effect: glitch+glow, --scanline-opacity: 0.3, --crt-effect: true"
+          },
+          {
+            "Style Category": "Cyberpunk UI",
+            "Type": "General",
+            "Keywords": "Neon, dark mode, terminal, HUD, sci-fi, glitch, dystopian, futuristic, matrix, tech noir",
+            "Primary Colors": "#00FF00 (Matrix Green), #FF00FF (Magenta), #00FFFF (Cyan), #0D0D0D (Dark)",
+            "Effects & Animation": "Neon glow (text-shadow), glitch animations (skew/offset), scanlines (::before overlay), terminal fonts",
+            "Best For": "Gaming platforms, tech products, crypto apps, sci-fi applications, developer tools, entertainment",
+            "Light Mode ✓": "✗ No",
+            "Dark Mode ✓": "✓ Only",
+            "Performance": "⚠ Moderate",
+            "Accessibility": "⚠ Limited (dark+neon)",
+            "Framework Compatibility": "Tailwind 8/10, Custom CSS 10/10",
+            "Complexity": "Medium",
+            "AI Prompt Keywords": "Design a cyberpunk interface. Use: neon colors on dark (#0D0D0D), terminal/HUD aesthetic, glitch effects, scanlines overlay, matrix green accents, monospace fonts, angular shapes, dystopian tech feel.",
+            "CSS/Technical Keywords": "background: #0D0D0D, color: #00FF00 or #FF00FF, font-family: monospace, text-shadow: 0 0 10px neon, animation: glitch (transform skew), ::before scanlines (repeating-linear-gradient)",
+            "Implementation Checklist": "☐ Dark background only, ☐ Neon accents visible, ☐ Glitch effect subtle, ☐ Scanlines optional, ☐ Monospace font, ☐ Terminal aesthetic",
+            "Design System Variables": "--bg-dark: #0D0D0D, --neon-green: #00FF00, --neon-magenta: #FF00FF, --neon-cyan: #00FFFF, --scanline-opacity: 0.1, --glitch-duration: 0.3s"
+          }
+        ]
+      }
+    },
+    {
+      "query": "accessible contrast",
+      "domain_arg": "color",
+      "max_results_arg": 4,
+      "expected": {
+        "domain": "color",
+        "query": "accessible contrast",
+        "file": "colors.csv",
+        "count": 3,
+        "results": [
+          {
+            "Product Type": "Photography Studio",
+            "Primary": "#18181B",
+            "On Primary": "#FFFFFF",
+            "Secondary": "#27272A",
+            "On Secondary": "#FFFFFF",
+            "Accent": "#F8FAFC",
+            "On Accent": "#0F172A",
+            "Background": "#000000",
+            "Foreground": "#FAFAFA",
+            "Card": "#0C0C0C",
+            "Card Foreground": "#FAFAFA",
+            "Muted": "#181818",
+            "Muted Foreground": "#94A3B8",
+            "Border": "#3F3F46",
+            "Destructive": "#EF4444",
+            "On Destructive": "#FFFFFF",
+            "Ring": "#18181B",
+            "Notes": "Pure black + white contrast"
+          },
+          {
+            "Product Type": "Government/Public Service",
+            "Primary": "#0F172A",
+            "On Primary": "#FFFFFF",
+            "Secondary": "#334155",
+            "On Secondary": "#FFFFFF",
+            "Accent": "#0369A1",
+            "On Accent": "#FFFFFF",
+            "Background": "#F8FAFC",
+            "Foreground": "#020617",
+            "Card": "#FFFFFF",
+            "Card Foreground": "#020617",
+            "Muted": "#E8ECF1",
+            "Muted Foreground": "#64748B",
+            "Border": "#E2E8F0",
+            "Destructive": "#DC2626",
+            "On Destructive": "#FFFFFF",
+            "Ring": "#0F172A",
+            "Notes": "High contrast navy + blue"
+          },
+          {
+            "Product Type": "SaaS (General)",
+            "Primary": "#2563EB",
+            "On Primary": "#FFFFFF",
+            "Secondary": "#3B82F6",
+            "On Secondary": "#FFFFFF",
+            "Accent": "#EA580C",
+            "On Accent": "#FFFFFF",
+            "Background": "#F8FAFC",
+            "Foreground": "#1E293B",
+            "Card": "#FFFFFF",
+            "Card Foreground": "#1E293B",
+            "Muted": "#E9EFF8",
+            "Muted Foreground": "#64748B",
+            "Border": "#E2E8F0",
+            "Destructive": "#DC2626",
+            "On Destructive": "#FFFFFF",
+            "Ring": "#2563EB",
+            "Notes": "Trust blue + orange CTA contrast [Accent adjusted from #F97316 for WCAG 3:1]"
+          }
+        ]
+      }
+    },
+    {
+      "query": "funnel retention",
+      "domain_arg": "chart",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "chart",
+        "query": "funnel retention",
+        "file": "charts.csv",
+        "count": 1,
+        "results": [
+          {
+            "Data Type": "Funnel / Flow",
+            "Keywords": "funnel, flow, conversion, drop-off, pipeline, stages",
+            "Best Chart Type": "Funnel Chart or Sankey",
+            "Secondary Options": "Waterfall (for flows)",
+            "When to Use": "Sequential multi-stage process; showing conversion or drop-off rates between defined stages",
+            "When NOT to Use": "Stages aren't sequential; values don't decrease monotonically (use bar); fewer than 3 stages",
+            "Data Volume Threshold": "3–8 stages optimal; beyond 8 stages group minor steps into 'Other'",
+            "Color Guidance": "Stages: single color gradient (start → end). Show conversion % between each stage. Highlight biggest drop",
+            "Accessibility Grade": "AA",
+            "Accessibility Notes": "Explicit conversion % as text per stage. Stage labels always visible. Linear list view as fallback.",
+            "A11y Fallback": "Provide linear list view with stage name + count + drop-off %; keyboard traversal",
+            "Library Recommendation": "D3.js, Recharts, Custom SVG",
+            "Interactive Level": "Hover + Drill"
+          }
+        ]
+      }
+    },
+    {
+      "query": "saas pricing table",
+      "domain_arg": "landing",
+      "max_results_arg": 2,
+      "expected": {
+        "domain": "landing",
+        "query": "saas pricing table",
+        "file": "landing.csv",
+        "count": 2,
+        "results": [
+          {
+            "Pattern Name": "Comparison Table + CTA",
+            "Keywords": "comparison, table, compare, versus, cta",
+            "Section Order": "1. Hero, 2. Problem intro, 3. Comparison table (product vs competitors), 4. Pricing (optional), 5. CTA",
+            "Primary CTA Placement": "Table: Right column. CTA: Below table",
+            "Color Strategy": "Table: Alternating rows (white/light grey). Your product: Highlight #FFFACD (light yellow) or green. Text: Dark",
+            "Conversion Optimization": "Use comparison to show unique value. Highlight your product row. Include 'free trial' in pricing row."
+          },
+          {
+            "Pattern Name": "Comparison Table Focus",
+            "Keywords": "comparison, table, versus, compare, features",
+            "Section Order": "1. Hero (problem statement), 2. Comparison matrix (you vs competitors), 3. Feature deep-dive, 4. Winner CTA",
+            "Primary CTA Placement": "After comparison table (highlighted row) + Bottom",
+            "Color Strategy": "Your product column highlighted (accent bg or green). Competitors neutral. Checkmarks green.",
+            "Conversion Optimization": "Show value vs competitors. 35% higher conversion. Be factual. Include pricing if favorable."
+          }
+        ]
+      }
+    },
+    {
+      "query": "touch targets mobile",
+      "domain_arg": "ux",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "ux",
+        "query": "touch targets mobile",
+        "file": "ux-guidelines.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Touch",
+            "Issue": "Touch Spacing",
+            "Platform": "Mobile",
+            "Description": "Adjacent touch targets need adequate spacing",
+            "Do": "Minimum 8px gap between touch targets",
+            "Don't": "Tightly packed clickable elements",
+            "Code Example Good": "gap-2 between buttons",
+            "Code Example Bad": "gap-0 or gap-1",
+            "Severity": "Medium"
+          },
+          {
+            "Category": "Responsive",
+            "Issue": "Touch Friendly",
+            "Platform": "Web",
+            "Description": "Mobile layouts need touch-sized targets",
+            "Do": "Increase touch targets on mobile",
+            "Don't": "Same tiny buttons on mobile",
+            "Code Example Good": "Larger buttons on mobile",
+            "Code Example Bad": "Desktop-sized targets on mobile",
+            "Severity": "High"
+          },
+          {
+            "Category": "Touch",
+            "Issue": "Touch Target Size",
+            "Platform": "Mobile",
+            "Description": "Small buttons are hard to tap accurately",
+            "Do": "Minimum 44x44px touch targets",
+            "Don't": "Tiny clickable areas",
+            "Code Example Good": "min-h-[44px] min-w-[44px]",
+            "Code Example Bad": "w-6 h-6 buttons",
+            "Severity": "High"
+          }
+        ]
+      }
+    },
+    {
+      "query": "playfair display pairing",
+      "domain_arg": "typography",
+      "max_results_arg": 2,
+      "expected": {
+        "domain": "typography",
+        "query": "playfair display pairing",
+        "file": "typography.csv",
+        "count": 2,
+        "results": [
+          {
+            "Font Pairing Name": "Restaurant Menu",
+            "Category": "Serif + Sans",
+            "Heading Font": "Playfair Display SC",
+            "Body Font": "Karla",
+            "Mood/Style Keywords": "restaurant, menu, culinary, elegant, foodie, hospitality",
+            "Best For": "Restaurants, cafes, food blogs, culinary, hospitality",
+            "Google Fonts URL": "https://fonts.googleapis.com/css2?family=Karla:wght@300;400;500;600;700&family=Playfair+Display+SC:wght@400;700&display=swap",
+            "CSS Import": "@import url('https://fonts.googleapis.com/css2?family=Karla:wght@300;400;500;600;700&family=Playfair+Display+SC:wght@400;700&display=swap');",
+            "Tailwind Config": "fontFamily: { display: ['Playfair Display SC', 'serif'], sans: ['Karla', 'sans-serif'] }",
+            "Notes": "Small caps Playfair for menu headers. Karla for descriptions."
+          },
+          {
+            "Font Pairing Name": "Classic Elegant",
+            "Category": "Serif + Sans",
+            "Heading Font": "Playfair Display",
+            "Body Font": "Inter",
+            "Mood/Style Keywords": "elegant, luxury, sophisticated, timeless, premium, editorial",
+            "Best For": "Luxury brands, fashion, spa, beauty, editorial, magazines, high-end e-commerce",
+            "Google Fonts URL": "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap",
+            "CSS Import": "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap');",
+            "Tailwind Config": "fontFamily: { serif: ['Playfair Display', 'serif'], sans: ['Inter', 'sans-serif'] }",
+            "Notes": "High contrast between elegant heading and clean body. Perfect for luxury/premium."
+          }
+        ]
+      }
+    },
+    {
+      "query": "arrows navigation chevron",
+      "domain_arg": "icons",
+      "max_results_arg": 5,
+      "expected": {
+        "domain": "icons",
+        "query": "arrows navigation chevron",
+        "file": "icons.csv",
+        "count": 5,
+        "results": [
+          {
+            "Category": "Layout",
+            "Icon Name": "arrows-out",
+            "Keywords": "fullscreen expand enlarge zoom",
+            "Library": "Phosphor",
+            "Import Code": "import { ArrowsOut } from '@phosphor-icons/react'",
+            "Usage": "<ArrowsOut size={20} weight=\"regular\" />",
+            "Best For": "Fullscreen maximize",
+            "Style": "Outline"
+          },
+          {
+            "Category": "Layout",
+            "Icon Name": "arrows-in",
+            "Keywords": "reduce shrink collapse exit",
+            "Library": "Phosphor",
+            "Import Code": "import { ArrowsIn } from '@phosphor-icons/react'",
+            "Usage": "<ArrowsIn size={20} weight=\"regular\" />",
+            "Best For": "Minimize reduce",
+            "Style": "Outline"
+          },
+          {
+            "Category": "Time",
+            "Icon Name": "arrows-clockwise",
+            "Keywords": "reload sync update refresh",
+            "Library": "Phosphor",
+            "Import Code": "import { ArrowsClockwise } from '@phosphor-icons/react'",
+            "Usage": "<ArrowsClockwise size={20} weight=\"regular\" />",
+            "Best For": "Refresh reload",
+            "Style": "Outline"
+          },
+          {
+            "Category": "Navigation",
+            "Icon Name": "list",
+            "Keywords": "hamburger menu navigation toggle bars",
+            "Library": "Phosphor",
+            "Import Code": "import { List } from '@phosphor-icons/react'",
+            "Usage": "<List size={20} weight=\"regular\" />",
+            "Best For": "Mobile navigation drawer toggle sidebar",
+            "Style": "Outline"
+          },
+          {
+            "Category": "Navigation",
+            "Icon Name": "house",
+            "Keywords": "homepage main dashboard start",
+            "Library": "Phosphor",
+            "Import Code": "import { House } from '@phosphor-icons/react'",
+            "Usage": "<House size={20} weight=\"regular\" />",
+            "Best For": "Home navigation main page",
+            "Style": "Outline"
+          }
+        ]
+      }
+    },
+    {
+      "query": "rerender memoization callback",
+      "domain_arg": "react",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "react",
+        "query": "rerender memoization callback",
+        "file": "react-performance.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Rerender",
+            "Issue": "Defer State Reads",
+            "Platform": "React/Next.js",
+            "Description": "Don't subscribe to state only used in callbacks",
+            "Do": "Read state on-demand in callbacks",
+            "Don't": "Subscribe to state used only in handlers",
+            "Code Example Good": "const handleClick = () => { const params = new URLSearchParams(location.search) }",
+            "Code Example Bad": "const params = useSearchParams(); const handleClick = () => { params.get('ref') }",
+            "Severity": "Medium"
+          },
+          {
+            "Category": "Rerender",
+            "Issue": "Functional setState",
+            "Platform": "React/Next.js",
+            "Description": "Use functional setState updates for stable callbacks and no stale closures",
+            "Do": "Use functional form: setState(curr => ...)",
+            "Don't": "Reference state directly in setState",
+            "Code Example Good": "setItems(curr => [...curr, newItem])",
+            "Code Example Bad": "setItems([...items, newItem]) // items in deps",
+            "Severity": "Medium"
+          },
+          {
+            "Category": "Advanced",
+            "Issue": "useLatest Hook",
+            "Platform": "React/Next.js",
+            "Description": "Access latest values in callbacks without adding to dependency arrays",
+            "Do": "Use useLatest for fresh values in stable callbacks",
+            "Don't": "Add callback to effect dependencies",
+            "Code Example Good": "const cbRef = useLatest(cb); useEffect(() => { setTimeout(() => cbRef.current()) }, [])",
+            "Code Example Bad": "useEffect(() => { setTimeout(() => cb()) }, [cb]) // re-runs",
+            "Severity": "Low"
+          }
+        ]
+      }
+    },
+    {
+      "query": "virtualize large list",
+      "domain_arg": "web",
+      "max_results_arg": 2,
+      "expected": {
+        "domain": "web",
+        "query": "virtualize large list",
+        "file": "app-interface.csv",
+        "count": 1,
+        "results": [
+          {
+            "Category": "Performance",
+            "Issue": "Virtualize Long Lists",
+            "Platform": "iOS/Android/React Native",
+            "Description": "Use FlatList/SectionList for lists over ~50 items",
+            "Do": "Use keyExtractor and initialNumToRender appropriately",
+            "Don't": "Render hundreds of items with ScrollView",
+            "Code Example Good": "<FlatList data={items} renderItem={...} />",
+            "Code Example Bad": "<ScrollView>{items.map(renderItem)}</ScrollView>",
+            "Severity": "High"
+          }
+        ]
+      }
+    },
+    {
+      "query": "inter variable sans",
+      "domain_arg": "google-fonts",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "google-fonts",
+        "query": "inter variable sans",
+        "file": "google-fonts.csv",
+        "count": 3,
+        "results": [
+          {
+            "Family": "Inter",
+            "Category": "Sans Serif",
+            "Stroke": "Sans Serif",
+            "Classifications": "",
+            "Styles": "100 | 100i | 200 | 200i | 300 | 300i | 400 | 400i | 500 | 500i | 600 | 600i | 700 | 700i | 800 | 800i | 900 | 900i",
+            "Variable Axes": "opsz: - | wght: -",
+            "Subsets": "cyrillic | cyrillic-ext | greek | greek-ext | latin | latin-ext | vietnamese",
+            "Designers": "Rasmus Andersson",
+            "Popularity Rank": "7",
+            "Google Fonts URL": "https://fonts.google.com/specimen/Inter"
+          },
+          {
+            "Family": "Inter Tight",
+            "Category": "Sans Serif",
+            "Stroke": "Sans Serif",
+            "Classifications": "Display",
+            "Styles": "100 | 100i | 200 | 200i | 300 | 300i | 400 | 400i | 500 | 500i | 600 | 600i | 700 | 700i | 800 | 800i | 900 | 900i",
+            "Variable Axes": "wght: -",
+            "Subsets": "cyrillic | cyrillic-ext | greek | greek-ext | latin | latin-ext | vietnamese",
+            "Designers": "Rasmus Andersson",
+            "Popularity Rank": "117",
+            "Google Fonts URL": "https://fonts.google.com/specimen/Inter+Tight"
+          },
+          {
+            "Family": "Instrument Sans",
+            "Category": "Sans Serif",
+            "Stroke": "Sans Serif",
+            "Classifications": "",
+            "Styles": "400 | 400i | 500 | 500i | 600 | 600i | 700 | 700i",
+            "Variable Axes": "wdth: - | wght: -",
+            "Subsets": "latin | latin-ext",
+            "Designers": "Rodrigo Fuenzalida | Jordan Egstad",
+            "Popularity Rank": "174",
+            "Google Fonts URL": "https://fonts.google.com/specimen/Instrument+Sans"
+          }
+        ]
+      }
+    },
+    {
+      "query": "zzzznonexistenttokenxyz",
+      "domain_arg": "style",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "style",
+        "query": "zzzznonexistenttokenxyz",
+        "file": "styles.csv",
+        "count": 0,
+        "results": []
+      }
+    },
+    {
+      "query": "qwertyasdfghjk",
+      "domain_arg": null,
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "style",
+        "query": "qwertyasdfghjk",
+        "file": "styles.csv",
+        "count": 0,
+        "results": []
+      }
+    }
+  ],
+  "search_stack": [
+    {
+      "query": "state management memo",
+      "stack_arg": "react",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "stack",
+        "stack": "react",
+        "query": "state management memo",
+        "file": "stacks/react.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Rendering",
+            "Guideline": "Use React.memo wisely",
+            "Description": "Wrap components that render often with same props",
+            "Do": "memo for pure components with stable props",
+            "Don't": "memo everything or nothing",
+            "Code Good": "memo(ExpensiveList)",
+            "Code Bad": "memo(SimpleButton)",
+            "Severity": "Low",
+            "Docs URL": "https://react.dev/reference/react/memo"
+          },
+          {
+            "Category": "Accessibility",
+            "Guideline": "Manage focus properly",
+            "Description": "Handle focus for modals dialogs",
+            "Do": "Focus trap in modals return focus on close",
+            "Don't": "No focus management",
+            "Code Good": "useEffect to focus input",
+            "Code Bad": "Modal without focus trap",
+            "Severity": "High",
+            "Docs URL": ""
+          },
+          {
+            "Category": "State",
+            "Guideline": "Avoid unnecessary state",
+            "Description": "Derive values from existing state when possible",
+            "Do": "Compute derived values in render",
+            "Don't": "Store derivable values in state",
+            "Code Good": "const total = items.reduce(...)",
+            "Code Bad": "const [total, setTotal] = useState(0)",
+            "Severity": "High",
+            "Docs URL": "https://react.dev/learn/choosing-the-state-structure"
+          }
+        ]
+      }
+    },
+    {
+      "query": "server components caching",
+      "stack_arg": "nextjs",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "stack",
+        "stack": "nextjs",
+        "query": "server components caching",
+        "file": "stacks/nextjs.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Rendering",
+            "Guideline": "Use Server Components by default",
+            "Description": "Server Components reduce client JS bundle",
+            "Do": "Keep components server by default",
+            "Don't": "Add 'use client' unnecessarily",
+            "Code Good": "export default function Page()",
+            "Code Bad": "('use client') for static content",
+            "Severity": "High",
+            "Docs URL": "https://nextjs.org/docs/app/building-your-application/rendering/server-components"
+          },
+          {
+            "Category": "DataFetching",
+            "Guideline": "Fetch data in Server Components",
+            "Description": "Fetch directly in async Server Components",
+            "Do": "async function Page() { const data = await fetch() }",
+            "Don't": "useEffect for initial data",
+            "Code Good": "const data = await fetch(url)",
+            "Code Bad": "useEffect(() => fetch(url))",
+            "Severity": "High",
+            "Docs URL": "https://nextjs.org/docs/app/building-your-application/data-fetching"
+          },
+          {
+            "Category": "Rendering",
+            "Guideline": "Mark Client Components explicitly",
+            "Description": "'use client' for interactive components",
+            "Do": "Add 'use client' only when needed",
+            "Don't": "Server Component with hooks/events",
+            "Code Good": "('use client') for onClick useState",
+            "Code Bad": "No directive with useState",
+            "Severity": "High",
+            "Docs URL": "https://nextjs.org/docs/app/building-your-application/rendering/client-components"
+          }
+        ]
+      }
+    },
+    {
+      "query": "reactivity ref computed",
+      "stack_arg": "vue",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "stack",
+        "stack": "vue",
+        "query": "reactivity ref computed",
+        "file": "stacks/vue.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Reactivity",
+            "Guideline": "Use computed for derived state",
+            "Description": "Computed properties cache and update automatically",
+            "Do": "computed() for derived values",
+            "Don't": "Methods for derived values",
+            "Code Good": "const doubled = computed(() => count.value * 2)",
+            "Code Bad": "const doubled = () => count.value * 2",
+            "Severity": "Medium",
+            "Docs URL": "https://vuejs.org/guide/essentials/computed.html"
+          },
+          {
+            "Category": "Reactivity",
+            "Guideline": "Use ref for primitives",
+            "Description": "ref() for primitive values that need reactivity",
+            "Do": "ref() for strings numbers booleans",
+            "Don't": "reactive() for primitives",
+            "Code Good": "const count = ref(0)",
+            "Code Bad": "const count = reactive(0)",
+            "Severity": "Medium",
+            "Docs URL": "https://vuejs.org/guide/essentials/reactivity-fundamentals.html"
+          },
+          {
+            "Category": "Composables",
+            "Guideline": "Return refs from composables",
+            "Description": "Maintain reactivity when destructuring",
+            "Do": "Return ref values",
+            "Don't": "Return reactive objects that lose reactivity",
+            "Code Good": "return { data: ref(null) }",
+            "Code Bad": "return reactive({ data: null })",
+            "Severity": "Medium",
+            "Docs URL": ""
+          }
+        ]
+      }
+    },
+    {
+      "query": "runes reactive props",
+      "stack_arg": "svelte",
+      "max_results_arg": 2,
+      "expected": {
+        "domain": "stack",
+        "stack": "svelte",
+        "query": "runes reactive props",
+        "file": "stacks/svelte.csv",
+        "count": 2,
+        "results": [
+          {
+            "Category": "Props",
+            "Guideline": "Export let for props",
+            "Description": "Declare props with export let",
+            "Do": "export let propName",
+            "Don't": "Props without export",
+            "Code Good": "export let count = 0",
+            "Code Bad": "let count = 0",
+            "Severity": "High",
+            "Docs URL": "https://svelte.dev/docs/svelte-components#script-1-export-creates-a-component-prop"
+          },
+          {
+            "Category": "Props",
+            "Guideline": "Use $props in Svelte 5",
+            "Description": "$props rune for prop access",
+            "Do": "let { name } = $props()",
+            "Don't": "export let in Svelte 5",
+            "Code Good": "let { name, age = 0 } = $props()",
+            "Code Bad": "export let name; export let age = 0",
+            "Severity": "Medium",
+            "Docs URL": ""
+          }
+        ]
+      }
+    },
+    {
+      "query": "content collections islands",
+      "stack_arg": "astro",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "stack",
+        "stack": "astro",
+        "query": "content collections islands",
+        "file": "stacks/astro.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Architecture",
+            "Guideline": "Use content collections",
+            "Description": "Type-safe content management for blogs docs",
+            "Do": "Content collections for structured content",
+            "Don't": "Loose markdown files without schema",
+            "Code Good": "const posts = await getCollection('blog')",
+            "Code Bad": "import.meta.glob('./posts/*.md')",
+            "Severity": "High",
+            "Docs URL": "https://docs.astro.build/en/guides/content-collections/"
+          },
+          {
+            "Category": "Data",
+            "Guideline": "Prefer content collections over glob",
+            "Description": "Type-safe collections for structured content",
+            "Do": "getCollection() for blog/docs",
+            "Don't": "Astro.glob for structured content",
+            "Code Good": "await getCollection('blog')",
+            "Code Bad": "await Astro.glob('./blog/*.md')",
+            "Severity": "High",
+            "Docs URL": ""
+          },
+          {
+            "Category": "Architecture",
+            "Guideline": "Use Islands Architecture",
+            "Description": "Astro's partial hydration only loads JS for interactive components",
+            "Do": "Interactive components with client directives",
+            "Don't": "Hydrate entire page like traditional SPA",
+            "Code Good": "<Counter client:load />",
+            "Code Bad": "Everything as client component",
+            "Severity": "High",
+            "Docs URL": "https://docs.astro.build/en/concepts/islands/"
+          }
+        ]
+      }
+    },
+    {
+      "query": "view modifier animation",
+      "stack_arg": "swiftui",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "stack",
+        "stack": "swiftui",
+        "query": "view modifier animation",
+        "file": "stacks/swiftui.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Animation",
+            "Guideline": "Use .animation modifier",
+            "Description": "Apply animations to views",
+            "Do": ".animation(.spring()) on view",
+            "Don't": "Manual animation timing",
+            "Code Good": ".animation(.easeInOut)",
+            "Code Bad": "CABasicAnimation equivalent",
+            "Severity": "Low",
+            "Docs URL": ""
+          },
+          {
+            "Category": "Modifiers",
+            "Guideline": "Create custom ViewModifiers",
+            "Description": "Reusable modifier combinations",
+            "Do": "ViewModifier for repeated styling",
+            "Don't": "Duplicate modifier chains",
+            "Code Good": "struct CardStyle: ViewModifier",
+            "Code Bad": ".shadow().cornerRadius() everywhere",
+            "Severity": "Medium",
+            "Docs URL": "https://developer.apple.com/documentation/swiftui/viewmodifier"
+          },
+          {
+            "Category": "Animation",
+            "Guideline": "Use withAnimation",
+            "Description": "Animate state changes",
+            "Do": "withAnimation for state transitions",
+            "Don't": "No animation for state changes",
+            "Code Good": "withAnimation { isExpanded.toggle() }",
+            "Code Bad": "isExpanded.toggle()",
+            "Severity": "Low",
+            "Docs URL": "https://developer.apple.com/documentation/swiftui/withanimation(_:_:)"
+          }
+        ]
+      }
+    },
+    {
+      "query": "reanimated flatlist performance",
+      "stack_arg": "react-native",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "stack",
+        "stack": "react-native",
+        "query": "reanimated flatlist performance",
+        "file": "stacks/react-native.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Animation",
+            "Guideline": "Use Reanimated",
+            "Description": "High-performance animations",
+            "Do": "react-native-reanimated",
+            "Don't": "Animated API for complex",
+            "Code Good": "useSharedValue useAnimatedStyle",
+            "Code Bad": "Animated.timing for gesture",
+            "Severity": "Medium",
+            "Docs URL": "https://docs.swmansion.com/react-native-reanimated/"
+          },
+          {
+            "Category": "Lists",
+            "Guideline": "Use FlatList for long lists",
+            "Description": "Virtualized list rendering",
+            "Do": "FlatList for 50+ items",
+            "Don't": "ScrollView with map",
+            "Code Good": "<FlatList data={items} />",
+            "Code Bad": "<ScrollView>{items.map()}</ScrollView>",
+            "Severity": "High",
+            "Docs URL": "https://reactnative.dev/docs/flatlist"
+          },
+          {
+            "Category": "Performance",
+            "Guideline": "Use React.memo",
+            "Description": "Prevent unnecessary re-renders",
+            "Do": "memo for pure components",
+            "Don't": "No memoization",
+            "Code Good": "export default memo(MyComponent)",
+            "Code Bad": "export default MyComponent",
+            "Severity": "Medium",
+            "Docs URL": ""
+          }
+        ]
+      }
+    },
+    {
+      "query": "provider bloc state",
+      "stack_arg": "flutter",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "stack",
+        "stack": "flutter",
+        "query": "provider bloc state",
+        "file": "stacks/flutter.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "State",
+            "Guideline": "Use state management for complex apps",
+            "Description": "Provider Riverpod BLoC",
+            "Do": "State management for shared state",
+            "Don't": "setState for global state",
+            "Code Good": "Provider.of<MyState>(context)",
+            "Code Bad": "Global setState calls",
+            "Severity": "Medium",
+            "Docs URL": ""
+          },
+          {
+            "Category": "State",
+            "Guideline": "Prefer Riverpod or Provider",
+            "Description": "Recommended state solutions",
+            "Do": "Riverpod for new projects",
+            "Don't": "InheritedWidget manually",
+            "Code Good": "ref.watch(myProvider)",
+            "Code Bad": "Custom InheritedWidget",
+            "Severity": "Medium",
+            "Docs URL": "https://riverpod.dev/"
+          },
+          {
+            "Category": "State",
+            "Guideline": "Use setState correctly",
+            "Description": "Minimal state in StatefulWidget",
+            "Do": "setState for UI state changes",
+            "Don't": "setState for business logic",
+            "Code Good": "setState(() { _counter++; })",
+            "Code Bad": "Complex logic in setState",
+            "Severity": "Medium",
+            "Docs URL": "https://api.flutter.dev/flutter/widgets/State/setState.html"
+          }
+        ]
+      }
+    },
+    {
+      "query": "components dialog button",
+      "stack_arg": "shadcn",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "stack",
+        "stack": "shadcn",
+        "query": "components dialog button",
+        "file": "stacks/shadcn.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Sidebar",
+            "Guideline": "Use SidebarTrigger",
+            "Description": "Include SidebarTrigger for mobile toggle",
+            "Do": "SidebarTrigger for responsive toggle",
+            "Don't": "Custom toggle button",
+            "Code Good": "<SidebarTrigger/>",
+            "Code Bad": "<Button onClick={() => toggleSidebar()}>",
+            "Severity": "Medium",
+            "Docs URL": "https://ui.shadcn.com/docs/components/sidebar"
+          },
+          {
+            "Category": "A11y",
+            "Guideline": "Maintain focus management",
+            "Description": "Dialog Sheet handle focus automatically",
+            "Do": "Let components manage focus",
+            "Don't": "Custom focus handling",
+            "Code Good": "<Dialog> traps focus",
+            "Code Bad": "document.querySelector().focus()",
+            "Severity": "High",
+            "Docs URL": "https://ui.shadcn.com/docs/components/dialog"
+          },
+          {
+            "Category": "Dialog",
+            "Guideline": "Use Dialog for modal content",
+            "Description": "Dialog component for overlay modal windows",
+            "Do": "Dialog for confirmations forms details",
+            "Don't": "Alert for modal content",
+            "Code Good": "<Dialog><DialogContent>",
+            "Code Bad": "<Alert> styled as modal",
+            "Severity": "High",
+            "Docs URL": "https://ui.shadcn.com/docs/components/dialog"
+          }
+        ]
+      }
+    },
+    {
+      "query": "tailwind layout flex grid",
+      "stack_arg": "html-tailwind",
+      "max_results_arg": 4,
+      "expected": {
+        "domain": "stack",
+        "stack": "html-tailwind",
+        "query": "tailwind layout flex grid",
+        "file": "stacks/html-tailwind.csv",
+        "count": 4,
+        "results": [
+          {
+            "Category": "Layout",
+            "Guideline": "Use shrink-0 shorthand",
+            "Description": "Shorter class name for flex-shrink-0",
+            "Do": "shrink-0 shrink",
+            "Don't": "flex-shrink-0 flex-shrink",
+            "Code Good": "shrink-0",
+            "Code Bad": "flex-shrink-0",
+            "Severity": "Low",
+            "Docs URL": "https://tailwindcss.com/docs/flex-shrink"
+          },
+          {
+            "Category": "Spacing",
+            "Guideline": "Space between",
+            "Description": "Use space-y-* for vertical lists",
+            "Do": "space-y-4 on flex/grid column",
+            "Don't": "Margin on each child",
+            "Code Good": "space-y-4",
+            "Code Bad": "Each child has mb-4",
+            "Severity": "Low",
+            "Docs URL": "https://tailwindcss.com/docs/space"
+          },
+          {
+            "Category": "Layout",
+            "Guideline": "Grid gaps",
+            "Description": "Use consistent gap utilities for spacing",
+            "Do": "gap-4 gap-6 gap-8",
+            "Don't": "Margins on individual items",
+            "Code Good": "grid gap-6",
+            "Code Bad": "grid with mb-4 on each item",
+            "Severity": "Medium",
+            "Docs URL": "https://tailwindcss.com/docs/gap"
+          },
+          {
+            "Category": "Layout",
+            "Guideline": "Flexbox alignment",
+            "Description": "Use flex utilities for alignment",
+            "Do": "items-center justify-between",
+            "Don't": "Multiple nested wrappers",
+            "Code Good": "flex items-center justify-between",
+            "Code Bad": "Nested divs for alignment",
+            "Severity": "Low",
+            "Docs URL": ""
+          }
+        ]
+      }
+    },
+    {
+      "query": "threejs scene performance",
+      "stack_arg": "threejs",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "stack",
+        "stack": "threejs",
+        "query": "threejs scene performance",
+        "file": "stacks/threejs.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "Performance",
+            "Guideline": "Tone Mapping and sRGB Encoding",
+            "Description": "Enable ACESFilmicToneMapping and sRGBEncoding on the renderer for accurate perceptual color. Without tone mapping colors appear washed out or over-saturated. These are renderer properties set after construction and take effect immediately.",
+            "Do": "Set renderer.toneMapping and renderer.outputEncoding after construction for all production scenes",
+            "Don't": "Leave tone mapping and output encoding at defaults when the scene targets realistic visuals",
+            "Code Good": "renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0; renderer.outputEncoding = THREE.sRGBEncoding; // correct for r128",
+            "Code Bad": "const renderer = new THREE.WebGLRenderer(); // defaults: NoToneMapping + LinearEncoding — colors appear flat and incorrect",
+            "Severity": "Medium",
+            "Docs URL": "https://threejs.org/docs/#api/en/renderers/WebGLRenderer.toneMapping"
+          },
+          {
+            "Category": "Performance",
+            "Guideline": "FogExp2 for Depth and Far Culling",
+            "Description": "Use scene.fog to create atmospheric depth. As a secondary benefit objects that disappear into fog before the far plane stop contributing to draw calls — useful in scenes with large view distances.",
+            "Do": "Add FogExp2 to scenes with view distances above 100 units for both visual atmosphere and implicit far culling",
+            "Don't": "Ignore fog in scenes with far:1000+ and many distant objects that contribute tiny pixels per draw call",
+            "Code Good": "scene.fog = new THREE.FogExp2(0x0a0a0a, 0.02); // exponential — density feels more natural than linear",
+            "Code Bad": "// far: 2000 with no fog — hundreds of distant objects too small to see still cost draw calls per frame",
+            "Severity": "Low",
+            "Docs URL": "https://threejs.org/docs/#api/en/scenes/FogExp2"
+          },
+          {
+            "Category": "Particles",
+            "Guideline": "BufferGeometry Plus Points for Particle Systems",
+            "Description": "Build all particle systems with BufferGeometry plus a Float32Array position attribute rendered as Points. Never use individual Mesh objects as particles — they cannot scale past a few hundred with good performance.",
+            "Do": "Use Points plus BufferGeometry for all particle effects",
+            "Don't": "Create hundreds of individual Mesh objects to simulate a particle system",
+            "Code Good": "const COUNT = 3000; const geo = new THREE.BufferGeometry(); const pos = new Float32Array(COUNT * 3); for (let i = 0; i < COUNT * 3; i++) pos[i] = (Math.random() - 0.5) * 20; geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); const particles = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.05, color: 0xffffff })); scene.add(particles);",
+            "Code Bad": "for (let i = 0; i < 500; i++) { scene.add(new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), mat)); } // 500 separate draw calls per frame",
+            "Severity": "High",
+            "Docs URL": "https://threejs.org/docs/#api/en/objects/Points"
+          }
+        ]
+      }
+    },
+    {
+      "query": "trackBy stable identity list items",
+      "stack_arg": "angular",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "stack",
+        "stack": "angular",
+        "query": "trackBy stable identity list items",
+        "file": "stacks/angular.csv",
+        "count": 2,
+        "results": [
+          {
+            "Category": "Performance",
+            "Guideline": "Use trackBy in @for blocks",
+            "Description": "Stable identity for list items prevents full DOM re-creation on change",
+            "Do": "track item.id in @for",
+            "Don't": "@for (item of items; track item.id) { <li>{{ item.name }}</li> }",
+            "Code Good": "@for (item of items; track $index) { <li>{{ item.name }}</li> }",
+            "Code Bad": "High",
+            "Severity": "https://angular.dev/guide/templates/control-flow#track-and-identity",
+            "Docs URL": null
+          },
+          {
+            "Category": "Testing",
+            "Guideline": "Use Angular CDK component harnesses",
+            "Description": "Harnesses provide a stable testing API that survives template refactors",
+            "Do": "MatButtonHarness and custom HarnessLoader",
+            "Don't": "Direct native element queries that break on template changes",
+            "Code Good": "const btn = await loader.getHarness(MatButtonHarness)",
+            "Code Bad": "fixture.debugElement.query(By.css('button'))",
+            "Severity": "Medium",
+            "Docs URL": "https://material.angular.io/cdk/test-harnesses/overview"
+          }
+        ]
+      }
+    },
+    {
+      "query": "canonical URLs duplicate content",
+      "stack_arg": "astro",
+      "max_results_arg": 3,
+      "expected": {
+        "domain": "stack",
+        "stack": "astro",
+        "query": "canonical URLs duplicate content",
+        "file": "stacks/astro.csv",
+        "count": 3,
+        "results": [
+          {
+            "Category": "SEO",
+            "Guideline": "Use canonical URLs",
+            "Description": "Prevent duplicate content issues",
+            "Do": "Astro.url for canonical generation",
+            "Don't": "<link rel=\"canonical\" href={Astro.url}>",
+            "Code Good": "No canonical tags",
+            "Code Bad": "Medium",
+            "Severity": "",
+            "Docs URL": null
+          },
+          {
+            "Category": "Architecture",
+            "Guideline": "Use content collections",
+            "Description": "Type-safe content management for blogs docs",
+            "Do": "Content collections for structured content",
+            "Don't": "Loose markdown files without schema",
+            "Code Good": "const posts = await getCollection('blog')",
+            "Code Bad": "import.meta.glob('./posts/*.md')",
+            "Severity": "High",
+            "Docs URL": "https://docs.astro.build/en/guides/content-collections/"
+          },
+          {
+            "Category": "Security",
+            "Guideline": "Sanitize user content",
+            "Description": "Prevent XSS in dynamic content",
+            "Do": "set:html only for trusted content",
+            "Don't": "set:html with user input",
+            "Code Good": "<Fragment set:html={sanitized} />",
+            "Code Bad": "<div set:html={userInput} />",
+            "Severity": "High",
+            "Docs URL": ""
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "type": "unknown_stack",
+      "query": "state",
+      "stack_arg": "invalid_stack_xyz",
+      "expected": {
+        "error": "Unknown stack: invalid_stack_xyz. Available: react, nextjs, vue, svelte, astro, swiftui, react-native, flutter, nuxtjs, nuxt-ui, html-tailwind, shadcn, jetpack-compose, threejs, angular, laravel, javafx, wpf, winui, avalonia, uno, uwp"
+      }
+    }
+  ]
+}
