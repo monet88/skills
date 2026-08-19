@@ -1,0 +1,21 @@
+# Research material (local only)
+.upstream/
+
+# OS / Editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Dependencies / Build / Logs / Scratch
+node_modules/
+dist/
+build/
+*.log
+.env
+.env.local
+.tmp/
+tmp/
