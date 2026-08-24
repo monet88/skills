@@ -1,0 +1,16 @@
+skills/agent-browser-skill-forge/scripts/forge-runtime.py
+  h_17f2fa2b92da6a 692-695,731-732,896-916
+tests/agent-browser-skill-forge.test.mjs
+  h_17f2fa2b92da6a 1994,1997,2000-2003,2005,2007,2015-2016,2021-2022,2024-2025,2030,2032-2035,2039-2049,2051,2056-2057,2061-2063,2065,2093-2095,2097,2114-2115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "0ecf2f5129dc0c8e6ed0718377aeaf7434b70b81",
+  "prompts": {},
+  "humans": {
+    "h_17f2fa2b92da6a": {
+      "author": "monet88 <minhthang421992@gmail.com>"
+    }
+  }
+}
