@@ -269,7 +269,7 @@ describe('Ask Impeccable Acceptance Suite', () => {
     assert.match(content, /Serial inside the batch/i, 'Commands inside a batch must execute serially');
     assert.match(content, /Split only at a real boundary/i, 'Fresh sessions must be reserved for real boundaries');
     assert.match(content, /Coordinator does not design/i, 'Coordinator must not perform UI work itself');
-    assert.match(content, /\/impeccable init\n\/impeccable audit dashboard/is, 'Must include an init-first same-prompt command batch example');
+    assert.match(content, /\/impeccable init\r?\n\/impeccable audit dashboard/is, 'Must include an init-first same-prompt command batch example');
     assert.match(content, /Do not force one-command-per-session churn/i, 'Unnecessary fresh-session churn must be forbidden');
 
     assert.match(content, /npx impeccable install/i, 'Must use upstream installer guidance');

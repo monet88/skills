@@ -19,3 +19,6 @@ build/
 .env.local
 .tmp/
 tmp/
+
+# agent-browser-skill-forge private workspace
+.agent-forge/

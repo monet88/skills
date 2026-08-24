@@ -1,0 +1,9 @@
+interface:
+  display_name: "Agent Browser Skill Forge"
+  short_description: "Forge reusable website Skills with agent-browser"
+  default_prompt: "Use agent-browser-skill-forge to explore this website capability and forge a verified reusable Skill."
+policy:
+  allow_implicit_invocation: true
+  products:
+    - "chatgpt"
+    - "codex"
