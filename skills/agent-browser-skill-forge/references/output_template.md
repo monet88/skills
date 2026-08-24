@@ -1,34 +1,345 @@
 # Generated Skill Output Contract
 
-Use this reference during Phase 3. Generated output remains private under `.agent-forge/output/<skill-name>/` until the user explicitly exports it.
+This reference is used during Phase 3 to generate reusable Skill packages. Generated output remains private under `.agent-forge/output/<skill-name>/` until the user explicitly exports it.
 
-## Package Shape
+---
 
-Each generated capability package must contain a `SKILL.md` entrypoint plus only the scripts, references, client files, manifests, and provenance required by the verified implementation.
-
-The generated Skill is the primary public interface. It must declare:
-- capability purpose and inputs/outputs;
-- actual classification: `DIRECT_API_VERIFIED`, `BROWSER_SESSION_API`, `DOM_ONLY`, or `HYBRID`;
-- prerequisites;
-- executable command templates;
-- quantifiable success criteria;
-- real known limitations;
-- deterministic recovery/revalidation behavior.
-
-## Reusable Strategy Rules
-
-- Do not include task-specific usernames, search terms, one-off URLs, secret values, or raw capture data.
-- Do not persist concrete snapshot refs. Browser-dependent paths must resolve targets again at execution time.
-- Do not label an observed endpoint as direct unless direct replay plus meaningful parameter variation passed.
-- Keep browser dependency only for classifications that actually require browser/session state.
-- For `DIRECT_API_VERIFIED`, the steady-state runtime must be usable without launching agent-browser.
-
-## Browser-Side JavaScript
-
-When a generated browser-dependent script emits JavaScript, make the Python file assemble only browser-side JS and business parameters. The canonical cross-shell execution form is:
+## Directory Structure
 
 ```text
-python scripts/<feature>.py <args> | agent-browser eval --stdin
+.agent-forge/output/<skill-name>/
+├── SKILL.md
+├── endpoint-manifest.json
+├── provenance.json
+├── client.py                  # Standalone client for DIRECT_API_VERIFIED
+└── scripts/
+    └── <feature>.py           # Python JS-emitter for browser-dependent paths
 ```
 
-Generated JS must return a defined error envelope for expected structural failures instead of crashing.
+### Naming Conventions
+- `<skill-name>`: Root folder for the skill suite, kebab-case (e.g. `github-issue-extractor`, `store-product-scraper`).
+- `<site-slug>-<capability-slug>`: Specific capability identifier (e.g. `store-list-products`).
+- Filenames use lowercase letters, digits, and hyphens (`client.py`, `scripts/extract-items.py`). No spaces or uppercase.
+
+---
+
+## SKILL.md Specification
+
+Every generated capability package contains a `SKILL.md` as its primary public interface:
+
+````markdown
+---
+name: {site-slug}-{capability-slug}
+description: "{Capability summary — site name + capability + input/output overview}. Use when the user asks to {trigger phrases covering casual/formal keywords}."
+---
+
+# {site-name} — {capability-name}
+
+> Classification: `{DIRECT_API_VERIFIED | BROWSER_SESSION_API | DOM_ONLY | HYBRID}`
+> {one-line input → output description}
+
+## Language
+
+All process output follows the user's language. Code comments, logs, and output schemas remain in English.
+
+## Objective
+
+{Single sentence describing the capability's goal.}
+
+## Prerequisites
+
+- For `DIRECT_API_VERIFIED`: Python 3.8+ (no browser required).
+- For `BROWSER_SESSION_API` / `DOM_ONLY`: `agent-browser` installed and target page accessible.
+- Authentication: {Declared auth requirements, e.g. active login session or API token}.
+
+## Pre-execution Checks
+
+1. **Prerequisite Verification**:
+   Verify declared dependencies are present (Python for direct API; `agent-browser` and named session for browser paths).
+2. **Session / Auth Verification**:
+   If authentication is required, confirm active session before running.
+
+## Capability Components
+
+### {DIRECT_API_VERIFIED Component} (when direct HTTP was verified)
+
+`python client.py {command} [options]`
+
+Parameters:
+- `--query <string>`: Search query or filter keyword.
+- `--page <int>`: Page number (default: 1).
+- `--limit <int>`: Items per page (default: 20).
+
+Output example:
+```json
+{
+  "items": [
+    {
+      "id": "item-123",
+      "title": "Example Item",
+      "price": 19.99,
+      "category": "electronics"
+    }
+  ],
+  "page": 1,
+  "total": 42,
+  "has_more": true
+}
+```
+
+### {BROWSER_SESSION_API / DOM_ONLY Component} (when browser is required)
+
+`python scripts/{feature}.py [options] | agent-browser eval --stdin`
+
+Parameters:
+- `--query <string>`: Search filter.
+- `--page <int>`: Target page.
+
+Output example:
+```json
+{
+  "items": [
+    {
+      "title": "Example Item",
+      "url": "https://example.com/items/123"
+    }
+  ],
+  "page": 1
+}
+```
+
+## Enum Parameters
+
+| Parameter | Type | Source & Acquisition Method | Options / Values |
+|---|---|---|---|
+| `category` | string | `[API]` `/api/categories` -> `[item.slug]` | `electronics`, `books`, `home` |
+| `status` | string | `[DOM]` `<select id="status">` options | `open`, `closed`, `all` |
+| `sort` | string | `[API]` `/api/sort-options` | `price_asc`, `price_desc`, `newest` |
+
+*Note: Uncollectable enum options are marked `[collection failed]`.*
+
+## Pagination Parameters
+
+| Parameter | Type | Mechanism | Termination Condition |
+|---|---|---|---|
+| `page` | integer | Query parameter `?page={n}` | `items.length == 0` or `page * limit >= total` |
+
+## Quantifiable Success Criteria
+
+- HTTP status 200 or clean script execution.
+- Response contains expected top-level key `items` (Array).
+- Array length > 0 on valid queries.
+- Each item contains required fields (`id`, `title`).
+
+## Error Envelope
+
+When a structural failure occurs, the generated client or script returns:
+```json
+{
+  "error": true,
+  "code": "ELEMENT_NOT_FOUND | AUTH_EXPIRED | RATE_LIMITED | INVALID_RESPONSE",
+  "message": "Human-readable diagnostic description"
+}
+```
+
+## Recovery & Revalidation Lifecycle
+
+1. **Fast Path**: Execute the known verified implementation.
+2. **Revalidation**: On unexpected failure (e.g. 401/403 or missing selector), test the known endpoint/selectors to isolate changes.
+3. **Drift Repair**: Update parameters/headers or refresh auth tokens if expired.
+4. **Re-exploration**: Only enter forge re-exploration if the target website architecture fundamentally changed.
+
+## Experience Notes
+
+- Record notable observations, timing hints, or rate limits here.
+````
+
+---
+
+## Standalone Python Client Template (`client.py`)
+
+For `DIRECT_API_VERIFIED` capabilities, emit a zero-setup Python client:
+
+```python
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+BASE_URL = "{base_url}"
+
+
+class APIClient:
+    def __init__(self, base_url=BASE_URL, auth_token=None):
+        self.base_url = base_url.rstrip("/")
+        self.auth_token = auth_token or os.environ.get("{AUTH_ENV_VAR}")
+
+    def _request(self, path, params=None, data=None, method="GET"):
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        if params:
+            url += f"?{urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})}"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json, text/plain, */*",
+        }
+        if self.auth_token:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+
+        encoded_data = json.dumps(data).encode("utf-8") if data else None
+        if encoded_data:
+            headers["Content-Type"] = "application/json"
+
+        req = urllib.request.Request(url, data=encoded_data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode("utf-8")
+                return json.loads(raw)
+        except urllib.error.HTTPError as exc:
+            err_body = exc.read().decode("utf-8", errors="replace")
+            return {"error": True, "code": f"HTTP_{exc.code}", "message": err_body}
+        except Exception as exc:
+            return {"error": True, "code": "REQUEST_FAILED", "message": str(exc)}
+
+    def extract_items(self, query=None, page=1, limit=20, category=None):
+        params = {"q": query, "page": page, "limit": limit, "category": category}
+        return self._request("{endpoint_path}", params=params)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="{capability_name} standalone client")
+    parser.add_argument("--query", "-q", help="Search query")
+    parser.add_argument("--page", "-p", type=int, default=1, help="Page number")
+    parser.add_argument("--limit", "-l", type=int, default=20, help="Page size")
+    parser.add_argument("--category", "-c", help="Category filter")
+    args = parser.parse_args()
+
+    client = APIClient()
+    result = client.extract_items(
+        query=args.query,
+        page=args.page,
+        limit=args.limit,
+        category=args.category,
+    )
+    print(json.dumps(result, indent=2))
+    if isinstance(result, dict) and result.get("error"):
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## Python JS-Emitter Template (`scripts/<feature>.py`)
+
+For browser-dependent paths (`BROWSER_SESSION_API` / `DOM_ONLY`):
+
+```python
+import argparse
+import json
+import sys
+
+
+def build_js(query=None, limit=20):
+    query_json = json.dumps(query)
+    limit_json = json.dumps(limit)
+    return f"""
+(() => {{
+  try {{
+    const query = {query_json};
+    const limit = {limit_json};
+    const rows = Array.from(document.querySelectorAll('.item-card, .list-row'));
+    if (!rows.length) {{
+      return JSON.stringify({{ error: true, code: "ELEMENT_NOT_FOUND", message: "No item elements found in DOM" }});
+    }}
+    const items = rows.slice(0, limit).map(row => ({{
+      title: row.querySelector('.title, h3, a')?.textContent?.trim() || '',
+      url: row.querySelector('a')?.href || '',
+      price: row.querySelector('.price')?.textContent?.trim() || null
+    }}));
+    return JSON.stringify({{ items, count: items.length }});
+  }} catch (err) {{
+    return JSON.stringify({{ error: true, code: "EXTRACTION_FAILED", message: err.message }});
+  }}
+}})()
+"""
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--query", "-q", default=None)
+    parser.add_argument("--limit", "-l", type=int, default=20)
+    args = parser.parse_args()
+    sys.stdout.write(build_js(query=args.query, limit=args.limit))
+
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## endpoint-manifest.json Schema
+
+```json
+{
+  "skill_name": "example-skill",
+  "target_origin": "https://example.com",
+  "generated_at": "2026-08-24T12:00:00Z",
+  "endpoints": [
+    {
+      "id": "list-items",
+      "method": "GET",
+      "path": "/api/v1/items",
+      "classification": "DIRECT_API_VERIFIED",
+      "parameters": {
+        "query": { "type": "string", "in": "query", "name": "q", "required": false },
+        "page": { "type": "integer", "in": "query", "name": "page", "default": 1 },
+        "limit": { "type": "integer", "in": "query", "name": "limit", "default": 20 }
+      },
+      "verification": {
+        "status": "PASSED",
+        "verified_at": "2026-08-24T12:00:00Z",
+        "tested_variations": [
+          { "params": { "page": 1 }, "status": 200, "item_count": 20 },
+          { "params": { "page": 2 }, "status": 200, "item_count": 20 }
+        ]
+      }
+    }
+  ]
+}
+```
+
+---
+
+## provenance.json Schema
+
+```json
+{
+  "forge_version": "0.1.0",
+  "agent_browser_version": "agent-browser 0.34.0",
+  "target_origin": "https://example.com",
+  "timestamp": "2026-08-24T12:00:00Z",
+  "har_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "capabilities": [
+    {
+      "name": "example-list-items",
+      "classification": "DIRECT_API_VERIFIED",
+      "steady_state_runtime": "python",
+      "verified_endpoint": "/api/v1/items"
+    }
+  ],
+  "verification_summary": {
+    "direct_api_count": 1,
+    "browser_session_count": 0,
+    "dom_only_count": 0,
+    "all_passed": true
+  }
+}
+```
+
