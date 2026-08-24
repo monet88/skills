@@ -259,12 +259,11 @@ class APIClient:
                 raw = resp.read().decode("utf-8")
                 return json.loads(raw)
         except urllib.error.HTTPError as exc:
-            err_body = exc.read().decode("utf-8", errors="replace")
             if exc.code in (401, 403):
-                return {"error": True, "code": "AUTH_EXPIRED", "message": f"Authentication token expired or unauthorized (HTTP {exc.code}): {err_body}"}
-            return {"error": True, "code": f"HTTP_{exc.code}", "message": err_body}
+                return {"error": True, "code": "AUTH_EXPIRED", "message": f"Authentication token expired or unauthorized (HTTP {exc.code})"}
+            return {"error": True, "code": f"HTTP_{exc.code}", "message": f"HTTP request failed with status {exc.code}"}
         except Exception as exc:
-            return {"error": True, "code": "REQUEST_FAILED", "message": str(exc)}
+            return {"error": True, "code": "REQUEST_FAILED", "message": "HTTP request failed due to client connection error"}
 
     def extract_items(self, query=None, page=1, limit=20, category=None):
         params = {"q": query, "page": page, "limit": limit, "category": category}

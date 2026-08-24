@@ -249,19 +249,26 @@ def sanitize_url(url_str):
     try:
         parsed = urllib.parse.urlparse(url_str)
         if parsed.scheme and (parsed.netloc or parsed.path):
+            netloc = parsed.netloc
+            if "@" in netloc:
+                userinfo, host = netloc.rsplit("@", 1)
+                if ":" in userinfo:
+                    netloc = f"[REDACTED]:[REDACTED]@{host}"
+                else:
+                    netloc = f"[REDACTED]@{host}"
+
             qs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-            if qs:
-                new_qs = []
-                for qk, qv in qs:
-                    if is_sensitive_key(qk):
-                        new_qs.append((qk, "[REDACTED]"))
-                    else:
-                        new_qs.append((qk, qv))
-                new_query = urllib.parse.urlencode(new_qs)
-                return urllib.parse.urlunparse((
-                    parsed.scheme, parsed.netloc, parsed.path,
-                    parsed.params, new_query, parsed.fragment
-                ))
+            new_qs = []
+            for qk, qv in qs:
+                if is_sensitive_key(qk):
+                    new_qs.append((qk, "[REDACTED]"))
+                else:
+                    new_qs.append((qk, qv))
+            new_query = urllib.parse.urlencode(new_qs)
+            return urllib.parse.urlunparse((
+                parsed.scheme, netloc, parsed.path,
+                parsed.params, new_query, parsed.fragment
+            ))
     except Exception:
         pass
     return url_str
@@ -270,6 +277,15 @@ def sanitize_url(url_str):
 def sanitize_text(text):
     if not isinstance(text, str):
         return text
+    trimmed = text.strip()
+    if (trimmed.startswith("{") and trimmed.endswith("}")) or (trimmed.startswith("[") and trimmed.endswith("]")):
+        try:
+            parsed_json = json.loads(trimmed)
+            sanitized_json = sanitize_deep(parsed_json)
+            return json.dumps(sanitized_json)
+        except Exception:
+            pass
+
     url_pattern = re.compile(r'https?://[^\s"\'<>]+')
     def replace_url(match):
         return sanitize_url(match.group(0))
@@ -278,6 +294,18 @@ def sanitize_text(text):
     for k in SENSITIVE_KEY_SUBSTRINGS:
         text = re.sub(rf'(?i)([\?&;,\s]|^)({k}[a-z0-9_]*)=([^\s&,;"]+)', r'\1\2=[REDACTED]', text)
     return text
+
+
+def redact_all_leaves(inner):
+    if isinstance(inner, dict):
+        return {ik: redact_all_leaves(iv) for ik, iv in inner.items()}
+    elif isinstance(inner, list):
+        return [redact_all_leaves(ix) for ix in inner]
+    elif isinstance(inner, str):
+        if inner.lower().startswith("bearer "):
+            return "Bearer [REDACTED]"
+        return "[REDACTED]"
+    return "[REDACTED]"
 
 
 def sanitize_deep(obj):
@@ -305,10 +333,15 @@ def sanitize_deep(obj):
                     else:
                         sanitized[k] = "[REDACTED]"
                 elif isinstance(v, dict):
-                    clean_dict = dict(v)
-                    if "default" in clean_dict:
-                        clean_dict["default"] = "[REDACTED]"
-                    sanitized[k] = clean_dict
+                    if "type" in v and ("in" in v or "name" in v):
+                        clean_dict = dict(v)
+                        if "default" in clean_dict:
+                            clean_dict["default"] = "[REDACTED]"
+                        sanitized[k] = clean_dict
+                    else:
+                        sanitized[k] = redact_all_leaves(v)
+                elif isinstance(v, list):
+                    sanitized[k] = redact_all_leaves(v)
                 else:
                     sanitized[k] = "[REDACTED]"
             else:
@@ -607,7 +640,7 @@ def generate_skill(args):
 
     sanitized_endpoints = sanitize_deep(raw_endpoints)
 
-    har_hash = spec.get("har_sha256") or "0" * 64
+    har_hash = spec.get("har_sha256")
     if args.har_path:
         hp = Path(args.har_path).resolve()
         if hp.exists():
@@ -706,12 +739,11 @@ class APIClient:
                 raw = resp.read().decode("utf-8")
                 return json.loads(raw)
         except urllib.error.HTTPError as exc:
-            err_body = exc.read().decode("utf-8", errors="replace")
             if exc.code in (401, 403):
-                return {{"error": True, "code": "AUTH_EXPIRED", "message": f"Authentication token expired or unauthorized (HTTP {{exc.code}}): {{err_body}}"}}
-            return {{"error": True, "code": f"HTTP_{{exc.code}}", "message": err_body}}
+                return {{"error": True, "code": "AUTH_EXPIRED", "message": f"Authentication token expired or unauthorized (HTTP {{exc.code}})"}}
+            return {{"error": True, "code": f"HTTP_{{exc.code}}", "message": f"HTTP request failed with status {{exc.code}}"}}
         except Exception as exc:
-            return {{"error": True, "code": "REQUEST_FAILED", "message": str(exc)}}
+            return {{"error": True, "code": "REQUEST_FAILED", "message": "HTTP request failed due to client connection error"}}
 
     def extract_items(self, query=None, page=1, limit=20, category=None):
         params = {{"q": query, "page": page, "limit": limit, "category": category}}

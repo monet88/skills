@@ -1475,5 +1475,168 @@ print(json.dumps(res))
       try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
     }
   });
-});
 
+  test('regression: generate-skill rejects --output-dir outside <root>/.agent-forge/output', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'boundary-test-'));
+
+    try {
+      const outsideDir = path.join(root, 'skills', 'untrusted-escape');
+      assert.throws(() => {
+        runPython([
+          'generate-skill',
+          '--root', root,
+          '--skill-name', 'escape-skill',
+          '--output-dir', outsideDir,
+        ]);
+      }, /must stay under/i, 'generate-skill must reject writing directly outside .agent-forge/output');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: recursive redaction sanitizes nested JSON payloads, URL userinfo credentials, and nested dictionary leaves', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'nested-redact-'));
+
+    try {
+      const userinfoUrl = 'https://admin_user:secret_password_xyz@api.example.com/items?token=secret_query_tok&safe_param=hello';
+      const sampleHar = path.join(root, 'sample.har');
+      fs.writeFileSync(sampleHar, JSON.stringify({
+        log: {
+          entries: [
+            {
+              request: {
+                method: 'POST',
+                url: userinfoUrl,
+                headers: [{ name: 'Authorization', value: 'Bearer super_secret_auth_token' }],
+                postData: {
+                  mimeType: 'application/json',
+                  text: JSON.stringify({
+                    credentials: {
+                      password: 'secret_nested_password_123',
+                      api_key: 'secret_nested_api_key_456',
+                    },
+                    safe_payload: 'visible',
+                  }),
+                },
+              },
+              response: {
+                status: 200,
+                content: {
+                  mimeType: 'application/json',
+                  text: JSON.stringify({ token: 'response_token_value' }),
+                },
+              },
+            },
+          ],
+        },
+      }), 'utf8');
+
+      // 1. Inspect HAR: verify userinfo credentials and nested JSON postData are redacted
+      const inspectRaw = runPython(['har-inspect', '--har', sampleHar]);
+      assert.doesNotMatch(inspectRaw, /secret_password_xyz/);
+      assert.doesNotMatch(inspectRaw, /secret_nested_password_123/);
+      assert.doesNotMatch(inspectRaw, /secret_nested_api_key_456/);
+      assert.doesNotMatch(inspectRaw, /super_secret_auth_token/);
+      assert.match(inspectRaw, /\[REDACTED\]/);
+
+      // 2. Generate skill with userinfo and nested dict under sensitive key
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: userinfoUrl,
+        path: '/items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        headers: {
+          Authorization: 'Bearer super_secret_auth_token',
+          auth_info: {
+            deep_secret_value: 'deep_secret_99999',
+          },
+        },
+      }), 'utf8');
+
+      runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'nested-redact-skill',
+        '--endpoint-spec', specFile,
+      ]);
+
+      const skillDir = path.join(root, '.agent-forge', 'output', 'nested-redact-skill');
+      const manifest = fs.readFileSync(path.join(skillDir, 'endpoint-manifest.json'), 'utf8');
+      const provenance = fs.readFileSync(path.join(skillDir, 'provenance.json'), 'utf8');
+
+      assert.doesNotMatch(manifest, /secret_password_xyz/);
+      assert.doesNotMatch(manifest, /deep_secret_99999/);
+      assert.doesNotMatch(manifest, /super_secret_auth_token/);
+
+      assert.doesNotMatch(provenance, /secret_password_xyz/);
+      assert.doesNotMatch(provenance, /deep_secret_99999/);
+      assert.doesNotMatch(provenance, /super_secret_auth_token/);
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: generated client.py never leaks raw HTTP error response bodies and provenance truthfully reports null HAR hash', async () => {
+    const http = await import('node:http');
+
+    const server = http.createServer((req, res) => {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        sensitive_server_leak: 'leaked_internal_auth_secret_xyz789',
+        stack_trace: '/internal/server/secret_config.json',
+      }));
+    });
+
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'client-leak-test-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: baseUrl,
+        path: '/api/leak-items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+      }), 'utf8');
+
+      runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'client-leak-skill',
+        '--endpoint-spec', specFile,
+      ]);
+
+      const skillDir = path.join(root, '.agent-forge', 'output', 'client-leak-skill');
+
+      // 1. Provenance must not fabricate an all-zero hash when no HAR was provided
+      const prov = JSON.parse(fs.readFileSync(path.join(skillDir, 'provenance.json'), 'utf8'));
+      assert.equal(prov.har_sha256, null, 'Provenance har_sha256 must be null when no HAR was provided');
+
+      // 2. Client error execution must not leak sensitive server body
+      const clientPath = path.join(skillDir, 'client.py');
+      let clientOutput = '';
+      try {
+        await execFileAsync(PYTHON, [clientPath, '--query', 'test'], { encoding: 'utf8' });
+      } catch (err) {
+        clientOutput = (err.stdout || '') + (err.stderr || '');
+      }
+
+      assert.doesNotMatch(clientOutput, /leaked_internal_auth_secret_xyz789/, 'Client must not leak raw server response body in errors');
+      assert.doesNotMatch(clientOutput, /secret_config\.json/, 'Client must not leak raw server response details in errors');
+      assert.match(clientOutput, /AUTH_EXPIRED/, 'Client must return structured AUTH_EXPIRED diagnostic');
+    } finally {
+      server.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+});
