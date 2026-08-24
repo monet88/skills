@@ -1,0 +1,22 @@
+skills/agent-browser-skill-forge/references/exploration_extraction.md
+  h_17f2fa2b92da6a 17-267,271-275,277-279
+skills/agent-browser-skill-forge/references/output_template.md
+  h_17f2fa2b92da6a 3,5,7,9-17,19-22,24,26,28,30-343
+skills/agent-browser-skill-forge/scripts/forge-runtime.py
+  h_17f2fa2b92da6a 11-13,44,76,116,175,221-823,840-874,886
+tests/agent-browser-skill-forge.test.mjs
+  h_17f2fa2b92da6a 3,34-66,152-451
+tests/fixtures/fixture_server.py
+  h_17f2fa2b92da6a 1-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9c4466c3704fcfc012a5f671130d9a094ec47ea5",
+  "prompts": {},
+  "humans": {
+    "h_17f2fa2b92da6a": {
+      "author": "monet88 <minhthang421992@gmail.com>"
+    }
+  }
+}
