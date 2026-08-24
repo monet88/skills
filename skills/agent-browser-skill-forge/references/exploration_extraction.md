@@ -277,4 +277,3 @@ Use live agent-browser commands only. Never use BrowserAct vocabulary:
 - Raw HAR recordings, auth cookies, tokens, and exploration logs must reside under `.agent-forge/runs/<run-id>/`.
 - Never commit `.agent-forge/` artifacts into git.
 - Manifest and provenance files store hashes and redacted metadata, never raw secret credentials.
-

@@ -448,4 +448,3 @@ describe('agent-browser-skill-forge Issue #12 (Extraction Forging & Direct Clien
     }
   });
 });
-
