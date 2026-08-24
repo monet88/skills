@@ -23,6 +23,40 @@ The generated Skill is the primary public interface. It must declare:
 - Keep browser dependency only for classifications that actually require browser/session state.
 - For `DIRECT_API_VERIFIED`, the steady-state runtime must be usable without launching agent-browser.
 
+## Error Envelope and Outcome Checks
+
+Generated scripts and strategies must return structured JSON envelopes for predictable automation:
+
+```json
+{
+  "success": true,
+  "data": {},
+  "error": null
+}
+```
+
+On failure:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable description",
+    "details": {}
+  }
+}
+```
+
+## Enum Parameters Layering
+
+In generated `SKILL.md`, document parameter retrieval under `Enum Parameters` layered by priority:
+1. `[API]`: Direct endpoint URL, method, and response path.
+2. `[DOM]`: Semantic selector and evaluation method.
+3. `[AI]`: Interaction instructions when code retrieval is impossible.
+Include inline comments `// {param_name} enumeration retrieval: ...` within generated scripts/strategies.
+
 ## Browser-Side JavaScript
 
 When a generated browser-dependent script emits JavaScript, make the Python file assemble only browser-side JS and business parameters. The canonical cross-shell execution form is:
@@ -31,4 +65,4 @@ When a generated browser-dependent script emits JavaScript, make the Python file
 python scripts/<feature>.py <args> | agent-browser eval --stdin
 ```
 
-Generated JS must return a defined error envelope for expected structural failures instead of crashing.
+Generated JS must return the defined error envelope for expected structural failures instead of crashing.

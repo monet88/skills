@@ -227,7 +227,71 @@ def build_parser():
     p_exec.add_argument("--run-id", required=True)
     p_exec.add_argument("command", nargs=argparse.REMAINDER)
     p_exec.set_defaults(func=execute)
+
+    p_har = sub.add_parser("har-inspect")
+    p_har.add_argument("--har", required=True, help="Path to HAR file")
+    p_har.add_argument("--methods", default=None, help="Comma-separated HTTP methods to include (default: all)")
+    p_har.set_defaults(func=har_inspect)
     return parser
+
+
+def har_inspect(args):
+    har_path = Path(args.har).resolve()
+    if not har_path.exists():
+        fail(f"HAR file does not exist: {har_path}")
+    try:
+        data = json.loads(har_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        fail(f"failed to read HAR JSON: {exc}")
+
+    entries = data.get("log", {}).get("entries", [])
+    results = []
+    methods = {m.strip().upper() for m in args.methods.split(",")} if args.methods else None
+
+    for entry in entries:
+        req = entry.get("request", {})
+        method = req.get("method", "GET").upper()
+        if methods and method not in methods:
+            continue
+
+        post_data = req.get("postData", {})
+        mime = post_data.get("mimeType", "")
+        raw_text = post_data.get("text", "")
+        parsed_body = None
+        if raw_text:
+            if "application/json" in mime or raw_text.startswith(("{", "[")):
+                try:
+                    parsed_body = json.loads(raw_text)
+                except Exception:
+                    parsed_body = raw_text
+            else:
+                parsed_body = raw_text
+
+        is_graphql = False
+        graphql_info = None
+        if isinstance(parsed_body, dict) and "query" in parsed_body:
+            q = parsed_body.get("query", "")
+            if isinstance(q, str) and re.search(r"\bmutation\b", q):
+                is_graphql = True
+                m = re.search(r"mutation\s+([A-Za-z0-9_]+)", q)
+                graphql_info = {
+                    "mutation_name": m.group(1) if m else "anonymous",
+                    "variables": parsed_body.get("variables", {}),
+                }
+
+        results.append({
+            "url": req.get("url"),
+            "method": method,
+            "headers": {h.get("name"): h.get("value") for h in req.get("headers", [])},
+            "query_string": req.get("queryString", []),
+            "post_data": parsed_body,
+            "mime_type": mime,
+            "is_graphql": is_graphql,
+            "graphql": graphql_info,
+        })
+
+    print(json.dumps({"count": len(results), "entries": results}, indent=2))
+
 
 
 def main():
