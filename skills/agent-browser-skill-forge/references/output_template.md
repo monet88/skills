@@ -6,6 +6,8 @@ This reference is used during Phase 3 to generate reusable Skill packages. Gener
 
 ## Directory Structure
 
+Each generated capability package must contain a `SKILL.md` entrypoint plus only the scripts, references, client files, manifests, and provenance required by the verified implementation.
+
 ```text
 .agent-forge/output/<skill-name>/
 ├── SKILL.md
@@ -20,6 +22,56 @@ This reference is used during Phase 3 to generate reusable Skill packages. Gener
 - `<skill-name>`: Root folder for the skill suite, kebab-case (e.g. `github-issue-extractor`, `store-product-scraper`).
 - `<site-slug>-<capability-slug>`: Specific capability identifier (e.g. `store-list-products`).
 - Filenames use lowercase letters, digits, and hyphens (`client.py`, `scripts/extract-items.py`). No spaces or uppercase.
+
+## Reusable Strategy Rules
+
+- Do not include task-specific usernames, search terms, one-off URLs, secret values, or raw capture data.
+- Do not persist concrete snapshot refs. Browser-dependent paths must resolve targets again at execution time.
+- Do not label an observed endpoint as direct unless direct replay plus meaningful parameter variation passed.
+- Keep browser dependency only for classifications that actually require browser/session state.
+- For `DIRECT_API_VERIFIED`, the steady-state runtime must be usable without launching agent-browser.
+
+## Error Envelope and Outcome Checks
+
+Generated scripts and strategies must return structured JSON envelopes for predictable automation:
+
+```json
+{
+  "success": true,
+  "data": {},
+  "error": null
+}
+```
+
+On failure:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable description",
+    "details": {}
+  }
+}
+```
+
+Generated JS must return the defined error envelope for expected structural failures instead of crashing.
+
+## Enum Parameters Layering
+
+In generated `SKILL.md`, document parameter retrieval under `Enum Parameters` layered by priority:
+1. `[API]`: Direct endpoint URL, method, and response path.
+2. `[DOM]`: Semantic selector and evaluation method.
+3. `[AI]`: Interaction instructions when code retrieval is impossible.
+Include inline comments `// {param_name} enumeration retrieval: ...` within generated scripts/strategies.
+
+## Browser-Side JavaScript
+
+When a generated browser-dependent script emits JavaScript, make the Python file assemble only browser-side JS and business parameters. The canonical cross-shell execution form is:
+
+`python scripts/{feature}.py [options] | agent-browser eval --stdin`
 
 ---
 
