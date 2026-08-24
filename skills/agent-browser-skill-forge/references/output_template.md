@@ -228,6 +228,14 @@ class APIClient:
     def __init__(self, base_url=BASE_URL, auth_token=None):
         self.base_url = base_url.rstrip("/")
         self.auth_token = auth_token or os.environ.get("{AUTH_ENV_VAR}")
+        if not self.auth_token:
+            auth_file = Path(os.getcwd()) / ".agent-forge" / "auth.json"
+            if auth_file.exists():
+                try:
+                    auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+                    self.auth_token = auth_data.get("token") or auth_data.get("auth_token")
+                except Exception:
+                    pass
 
     def _request(self, path, params=None, data=None, method="GET"):
         url = f"{self.base_url}/{path.lstrip('/')}"
@@ -252,6 +260,8 @@ class APIClient:
                 return json.loads(raw)
         except urllib.error.HTTPError as exc:
             err_body = exc.read().decode("utf-8", errors="replace")
+            if exc.code in (401, 403):
+                return {"error": True, "code": "AUTH_EXPIRED", "message": f"Authentication token expired or unauthorized (HTTP {exc.code}): {err_body}"}
             return {"error": True, "code": f"HTTP_{exc.code}", "message": err_body}
         except Exception as exc:
             return {"error": True, "code": "REQUEST_FAILED", "message": str(exc)}

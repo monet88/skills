@@ -435,6 +435,57 @@ def verify_endpoint(args):
     print(json.dumps(output, indent=2))
 
 
+def sanitize_headers(headers):
+    if not headers or not isinstance(headers, dict):
+        return headers
+    sanitized = {}
+    for k, v in headers.items():
+        lower_k = str(k).lower()
+        if any(s in lower_k for s in ("auth", "token", "cookie", "key", "secret", "session", "credential", "password")):
+            sanitized[k] = "[REDACTED]"
+        else:
+            sanitized[k] = v
+    return sanitized
+
+
+def sanitize_params(params):
+    if not params or not isinstance(params, dict):
+        return params
+    sanitized = {}
+    for k, v in params.items():
+        if isinstance(v, dict):
+            clean_v = dict(v)
+            if "default" in clean_v:
+                lower_name = str(clean_v.get("name", k)).lower()
+                if any(s in lower_name for s in ("auth", "token", "key", "secret", "password", "credential")):
+                    clean_v["default"] = "[REDACTED]"
+            sanitized[k] = clean_v
+        else:
+            lower_k = str(k).lower()
+            if any(s in lower_k for s in ("auth", "token", "key", "secret", "password", "credential")):
+                sanitized[k] = "[REDACTED]"
+            else:
+                sanitized[k] = v
+    return sanitized
+
+
+def sanitize_variations(variations):
+    if not variations or not isinstance(variations, list):
+        return variations
+    sanitized = []
+    for v in variations:
+        if isinstance(v, dict):
+            sv = dict(v)
+            if "headers" in sv:
+                sv["headers"] = sanitize_headers(sv["headers"])
+            if "params" in sv:
+                sv["params"] = sanitize_params(sv["params"])
+            sanitized.append(sv)
+        else:
+            sanitized.append(v)
+    return sanitized
+
+
 def generate_skill(args):
     root = resolve_root(args.root)
     output_dir = Path(args.output_dir).resolve() if args.output_dir else root / PRIVATE_DIR / "output" / safe_token(args.skill_name)
@@ -455,11 +506,13 @@ def generate_skill(args):
     capability_name = f"{site_slug}-{capability_slug}"
     base_url = spec.get("base_url") or spec.get("url") or "https://example.com"
     endpoint_path = spec.get("path") or "/api/items"
-    endpoints = spec.get("endpoints") or [{
+
+    raw_endpoints = spec.get("endpoints") or [{
         "id": capability_slug,
         "method": spec.get("method", "GET"),
         "path": endpoint_path,
         "classification": classification,
+        "headers": spec.get("headers", {}),
         "parameters": spec.get("parameters", {
             "query": {"type": "string", "in": "query", "name": "q"},
             "page": {"type": "integer", "in": "query", "name": "page", "default": 1},
@@ -470,6 +523,21 @@ def generate_skill(args):
             "tested_variations": spec.get("tested_variations", [])
         }
     }]
+
+    # Sanitize secrets in endpoints metadata
+    sanitized_endpoints = []
+    for ep in raw_endpoints:
+        clean_ep = dict(ep)
+        if "headers" in clean_ep:
+            clean_ep["headers"] = sanitize_headers(clean_ep["headers"])
+        if "parameters" in clean_ep:
+            clean_ep["parameters"] = sanitize_params(clean_ep["parameters"])
+        if "verification" in clean_ep and isinstance(clean_ep["verification"], dict):
+            clean_v = dict(clean_ep["verification"])
+            if "tested_variations" in clean_v:
+                clean_v["tested_variations"] = sanitize_variations(clean_v["tested_variations"])
+            clean_ep["verification"] = clean_v
+        sanitized_endpoints.append(clean_ep)
 
     har_hash = spec.get("har_sha256") or "0" * 64
     if args.har_path:
@@ -482,7 +550,7 @@ def generate_skill(args):
         "skill_name": capability_name,
         "target_origin": base_url,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "endpoints": endpoints
+        "endpoints": sanitized_endpoints
     }
     (output_dir / "endpoint-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
@@ -519,6 +587,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 BASE_URL = {json.dumps(base_url)}
 
@@ -527,6 +596,14 @@ class APIClient:
     def __init__(self, base_url=BASE_URL, auth_token=None):
         self.base_url = base_url.rstrip("/")
         self.auth_token = auth_token or os.environ.get("API_AUTH_TOKEN")
+        if not self.auth_token:
+            auth_file = Path(os.getcwd()) / ".agent-forge" / "auth.json"
+            if auth_file.exists():
+                try:
+                    auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+                    self.auth_token = auth_data.get("token") or auth_data.get("auth_token")
+                except Exception:
+                    pass
 
     def _request(self, path, params=None, data=None, method="GET"):
         url = f"{{self.base_url}}/{{path.lstrip('/')}}"
@@ -553,6 +630,8 @@ class APIClient:
                 return json.loads(raw)
         except urllib.error.HTTPError as exc:
             err_body = exc.read().decode("utf-8", errors="replace")
+            if exc.code in (401, 403):
+                return {{"error": True, "code": "AUTH_EXPIRED", "message": f"Authentication token expired or unauthorized (HTTP {{exc.code}}): {{err_body}}"}}
             return {{"error": True, "code": f"HTTP_{{exc.code}}", "message": err_body}}
         except Exception as exc:
             return {{"error": True, "code": "REQUEST_FAILED", "message": str(exc)}}
@@ -821,6 +900,132 @@ def validate_package(args):
         sys.exit(1)
 
 
+def export_skill(args):
+    pkg_dir = Path(args.package_dir).resolve()
+    if not pkg_dir.exists() or not pkg_dir.is_dir():
+        fail(f"Package directory does not exist: {pkg_dir}")
+    if not args.destination or not str(args.destination).strip():
+        fail("Destination path is required for export")
+    dest_dir = Path(args.destination).resolve()
+
+    skill_md = pkg_dir / "SKILL.md"
+    if not skill_md.exists():
+        fail(f"Invalid package: SKILL.md missing in {pkg_dir}")
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for item in pkg_dir.iterdir():
+        target = dest_dir / item.name
+        if item.is_dir():
+            shutil.copytree(item, target, dirs_exist_ok=True)
+        else:
+            shutil.copy2(item, target)
+
+    result = {
+        "exported": True,
+        "source": str(pkg_dir),
+        "destination": str(dest_dir),
+    }
+    print(json.dumps(result, indent=2))
+
+
+def revalidate_skill(args):
+    pkg_dir = Path(args.package_dir).resolve()
+    if not pkg_dir.exists() or not pkg_dir.is_dir():
+        fail(f"Package directory does not exist: {pkg_dir}")
+    manifest_file = pkg_dir / "endpoint-manifest.json"
+    if not manifest_file.exists():
+        fail(f"endpoint-manifest.json missing in package: {pkg_dir}")
+
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    base_url = args.base_url or manifest.get("target_origin", "https://example.com")
+    endpoints = manifest.get("endpoints", [])
+
+    tested_endpoints = []
+    overall_status = "HEALTHY"
+    all_verified = True
+
+    for ep in endpoints:
+        ep_path = ep.get("path", "")
+        ep_method = ep.get("method", "GET").upper()
+        url = f"{base_url.rstrip('/')}/{ep_path.lstrip('/')}"
+
+        req_params = {}
+        for p_name, p_def in ep.get("parameters", {}).items():
+            if isinstance(p_def, dict) and p_def.get("default") is not None and p_def.get("default") != "[REDACTED]":
+                req_params[p_def.get("name", p_name)] = p_def["default"]
+
+        if req_params:
+            url += f"?{urllib.parse.urlencode(req_params)}"
+
+        req = urllib.request.Request(url, method=ep_method)
+        auth_token = os.environ.get("API_AUTH_TOKEN")
+        if auth_token:
+            req.add_header("Authorization", f"Bearer {auth_token}")
+
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                status_code = resp.getcode()
+                body_raw = resp.read().decode("utf-8", errors="replace")
+                try:
+                    parsed_body = json.loads(body_raw)
+                except Exception:
+                    parsed_body = body_raw
+
+                required_keys = []
+                for v in ep.get("verification", {}).get("tested_variations", []):
+                    if isinstance(v, dict) and v.get("required_keys"):
+                        required_keys.extend(v["required_keys"])
+                if not required_keys:
+                    if isinstance(parsed_body, dict) and "items" in parsed_body:
+                        required_keys = ["items"]
+
+                ep_ok = True
+                if isinstance(parsed_body, dict) and required_keys:
+                    for rk in required_keys:
+                        if rk not in parsed_body:
+                            ep_ok = False
+                            overall_status = "DRIFT_DETECTED"
+                            all_verified = False
+                            break
+
+                tested_endpoints.append({
+                    "endpoint": ep_path,
+                    "status": status_code,
+                    "verified": ep_ok,
+                    "drift": not ep_ok,
+                })
+        except urllib.error.HTTPError as exc:
+            all_verified = False
+            if exc.code in (401, 403):
+                overall_status = "AUTH_EXPIRED"
+            elif exc.code == 404:
+                overall_status = "RE_EXPLORATION_REQUIRED"
+            else:
+                overall_status = "DRIFT_DETECTED"
+            tested_endpoints.append({
+                "endpoint": ep_path,
+                "status": exc.code,
+                "verified": False,
+                "error": str(exc),
+            })
+        except Exception as exc:
+            all_verified = False
+            overall_status = "RE_EXPLORATION_REQUIRED"
+            tested_endpoints.append({
+                "endpoint": ep_path,
+                "status": 0,
+                "verified": False,
+                "error": str(exc),
+            })
+
+    result = {
+        "status": overall_status,
+        "verified": all_verified,
+        "tested_endpoints": tested_endpoints,
+    }
+    print(json.dumps(result, indent=2))
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="Trusted runtime boundary for agent-browser-skill-forge")
     sub = parser.add_subparsers(dest="action", required=True)
@@ -876,6 +1081,16 @@ def build_parser():
     p_val = sub.add_parser("validate-package")
     p_val.add_argument("--package-dir", required=True)
     p_val.set_defaults(func=validate_package)
+
+    p_exp = sub.add_parser("export-skill")
+    p_exp.add_argument("--package-dir", required=True)
+    p_exp.add_argument("--destination", required=True)
+    p_exp.set_defaults(func=export_skill)
+
+    p_rev = sub.add_parser("revalidate-skill")
+    p_rev.add_argument("--package-dir", required=True)
+    p_rev.add_argument("--base-url")
+    p_rev.set_defaults(func=revalidate_skill)
     return parser
 
 

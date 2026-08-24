@@ -882,3 +882,382 @@ python scripts/create_item.py --url "${baseUrl}/api/items" --category "software"
     }
   });
 });
+
+describe('agent-browser-skill-forge Issue #14 (Privacy, Manifests, Provenance, & Revalidation)', () => {
+  let fixture;
+
+  test('generated packages remain private under .agent-forge/output/ and export only on explicit destination command', async () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'export-test-'));
+
+    try {
+      const skillName = 'test-private-pkg';
+      const defaultOutputDir = path.join(root, '.agent-forge', 'output', skillName);
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', skillName,
+        '--site-name', 'Test Export Store',
+        '--site-slug', 'test-export',
+        '--capability-slug', 'export-items',
+        '--classification', 'DIRECT_API_VERIFIED',
+      ]);
+      const gen = JSON.parse(genRaw);
+      assert.equal(gen.output_dir, defaultOutputDir);
+      assert.ok(fs.existsSync(path.join(defaultOutputDir, 'SKILL.md')));
+
+      // Test export to explicit destination
+      const explicitExportDest = path.join(root, 'exported-skills', skillName);
+      const exportRaw = runPython([
+        'export-skill',
+        '--package-dir', defaultOutputDir,
+        '--destination', explicitExportDest,
+      ]);
+      const exportResult = JSON.parse(exportRaw);
+      assert.equal(exportResult.exported, true);
+      assert.equal(exportResult.destination, explicitExportDest);
+      assert.ok(fs.existsSync(path.join(explicitExportDest, 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(explicitExportDest, 'endpoint-manifest.json')));
+      assert.ok(fs.existsSync(path.join(explicitExportDest, 'provenance.json')));
+
+      // Export must validate the package before copying
+      const valRaw = runPython(['validate-package', '--package-dir', explicitExportDest]);
+      const val = JSON.parse(valRaw);
+      assert.equal(val.valid, true);
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('manifest and provenance record complete metadata, HAR hashes, and redact secret tokens', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'secret-redact-'));
+
+    try {
+      const harFile = path.join(root, 'sample.har');
+      fs.writeFileSync(harFile, JSON.stringify({ log: { entries: [] } }), 'utf8');
+
+      const specFile = path.join(root, 'spec-with-secrets.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: 'https://secret-api.example.com',
+        path: '/api/v1/secure-items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Secret Store',
+        site_slug: 'secret-store',
+        capability_slug: 'secure-items',
+        headers: {
+          Authorization: 'Bearer super_secret_token_value_12345',
+          'X-Api-Key': 'raw_secret_api_key_xyz987',
+          Cookie: 'session_id=super_secret_cookie_abcdef',
+        },
+        parameters: {
+          token: { type: 'string', in: 'query', name: 'token', default: 'sensitive_query_token' },
+          query: { type: 'string', in: 'query', name: 'q', default: 'laptops' },
+          page: { type: 'integer', in: 'query', name: 'page', default: 1 },
+        },
+        tested_variations: [
+          {
+            params: { page: 1 },
+            headers: { Authorization: 'Bearer super_secret_token_value_12345' },
+            status: 200,
+            item_count: 5,
+          },
+        ],
+      }), 'utf8');
+
+      const skillDir = path.join(root, '.agent-forge', 'output', 'secret-store-secure-items');
+      runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'secret-store-secure-items',
+        '--site-name', 'Secret Store',
+        '--site-slug', 'secret-store',
+        '--capability-slug', 'secure-items',
+        '--classification', 'DIRECT_API_VERIFIED',
+        '--endpoint-spec', specFile,
+        '--har-path', harFile,
+        '--output-dir', skillDir,
+      ]);
+
+      const manifestContent = fs.readFileSync(path.join(skillDir, 'endpoint-manifest.json'), 'utf8');
+      const provenanceContent = fs.readFileSync(path.join(skillDir, 'provenance.json'), 'utf8');
+      const skillMdContent = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+
+      // CRITICAL: Secrets must NOT appear anywhere in output artifacts
+      assert.doesNotMatch(manifestContent, /super_secret_token_value_12345/);
+      assert.doesNotMatch(manifestContent, /raw_secret_api_key_xyz987/);
+      assert.doesNotMatch(manifestContent, /super_secret_cookie_abcdef/);
+      assert.doesNotMatch(manifestContent, /sensitive_query_token/);
+
+      assert.doesNotMatch(provenanceContent, /super_secret_token_value_12345/);
+      assert.doesNotMatch(provenanceContent, /raw_secret_api_key_xyz987/);
+      assert.doesNotMatch(provenanceContent, /super_secret_cookie_abcdef/);
+      assert.doesNotMatch(provenanceContent, /sensitive_query_token/);
+
+      assert.doesNotMatch(skillMdContent, /super_secret_token_value_12345/);
+      assert.doesNotMatch(skillMdContent, /raw_secret_api_key_xyz987/);
+
+      // Verify completeness of manifest and provenance schema
+      const manifest = JSON.parse(manifestContent);
+      assert.equal(manifest.skill_name, 'secret-store-secure-items');
+      assert.equal(manifest.target_origin, 'https://secret-api.example.com');
+      assert.equal(manifest.endpoints[0].method, 'GET');
+      assert.equal(manifest.endpoints[0].path, '/api/v1/secure-items');
+      assert.ok(manifest.endpoints[0].parameters.query);
+      assert.equal(manifest.endpoints[0].parameters.query.in, 'query');
+
+      const prov = JSON.parse(provenanceContent);
+      assert.equal(prov.target_origin, 'https://secret-api.example.com');
+      assert.equal(prov.capabilities[0].name, 'secret-store-secure-items');
+      assert.equal(prov.capabilities[0].steady_state_runtime, 'python');
+      assert.equal(prov.verification_summary.direct_api_count, 1);
+      assert.equal(prov.verification_summary.all_passed, true);
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('generated Python client is importable as a module, runnable via CLI, and handles auth expiration cleanly', async () => {
+    const http = await import('node:http');
+
+    let currentAuthHeader = null;
+    let authValid = true;
+
+    const server = http.createServer((req, res) => {
+      const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
+      currentAuthHeader = req.headers['authorization'];
+
+      if (parsedUrl.pathname === '/api/secure-items') {
+        if (!authValid || currentAuthHeader !== 'Bearer valid-auth-token-123') {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: true, message: 'Unauthorized or token expired' }));
+          return;
+        }
+
+        const q = parsedUrl.searchParams.get('q') || '';
+        const page = parseInt(parsedUrl.searchParams.get('page') || '1', 10);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          items: [{ id: 'sec-1', title: 'Secure Item 1', query: q }],
+          page,
+          total: 1,
+        }));
+        return;
+      }
+
+      res.writeHead(404);
+      res.end();
+    });
+
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'client-auth-test-'));
+
+    try {
+      const skillDir = path.join(root, '.agent-forge', 'output', 'auth-store-items');
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: baseUrl,
+        path: '/api/secure-items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Auth Store',
+        site_slug: 'auth-store',
+        capability_slug: 'items',
+        parameters: {
+          query: { type: 'string', in: 'query', name: 'q' },
+          page: { type: 'integer', in: 'query', name: 'page', default: 1 },
+        },
+      }), 'utf8');
+
+      runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'auth-store-items',
+        '--site-name', 'Auth Store',
+        '--site-slug', 'auth-store',
+        '--capability-slug', 'items',
+        '--classification', 'DIRECT_API_VERIFIED',
+        '--endpoint-spec', specFile,
+        '--output-dir', skillDir,
+      ]);
+
+      const clientPath = path.join(skillDir, 'client.py');
+      assert.ok(fs.existsSync(clientPath));
+
+      // 1. Test Python importability as a library module
+      const importCheckScript = `
+import sys
+sys.path.insert(0, ${JSON.stringify(skillDir)})
+from client import APIClient
+client = APIClient(base_url=${JSON.stringify(baseUrl)}, auth_token="valid-auth-token-123")
+res = client.extract_items(query="test-query", page=1)
+import json
+print(json.dumps(res))
+`;
+      const importResExec = await execFileAsync(PYTHON, ['-c', importCheckScript], { encoding: 'utf8' });
+      const importRes = JSON.parse(importResExec.stdout);
+      assert.equal(importRes.items.length, 1);
+      assert.equal(importRes.items[0].query, 'test-query');
+
+      // 2. Test CLI execution with environment auth
+      const cliResExec = await execFileAsync(PYTHON, [clientPath, '--query', 'cli-query'], {
+        encoding: 'utf8',
+        env: { ...process.env, API_AUTH_TOKEN: 'valid-auth-token-123' },
+      });
+      const cliRes = JSON.parse(cliResExec.stdout);
+      assert.equal(cliRes.items[0].query, 'cli-query');
+
+      // 3. Test auth expiration reporting
+      authValid = false;
+      let expiredFailed = false;
+      let expiredOutput = '';
+      try {
+        await execFileAsync(PYTHON, [clientPath, '--query', 'cli-query'], {
+          encoding: 'utf8',
+          env: { ...process.env, API_AUTH_TOKEN: 'valid-auth-token-123' },
+        });
+      } catch (err) {
+        expiredFailed = true;
+        expiredOutput = err.stdout || err.stderr || '';
+      }
+
+      assert.ok(expiredFailed, 'Client must exit with non-zero code on auth failure');
+      assert.match(expiredOutput, /AUTH_EXPIRED|HTTP_401/, 'Client must report structured auth failure rather than fabricating refresh');
+    } finally {
+      server.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('deterministic revalidation lifecycle verifies healthy endpoints and detects drift / auth expiration', async () => {
+    const http = await import('node:http');
+
+    let endpointState = 'HEALTHY';
+
+    const server = http.createServer((req, res) => {
+      const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
+
+      if (parsedUrl.pathname === '/api/reval-items') {
+        if (endpointState === 'HEALTHY') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            items: [{ id: '1', title: 'Healthy 1' }, { id: '2', title: 'Healthy 2' }],
+            total: 2,
+          }));
+          return;
+        } else if (endpointState === 'AUTH_EXPIRED') {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: true, code: 'UNAUTHORIZED' }));
+          return;
+        } else if (endpointState === 'DRIFT_DETECTED') {
+          // Schema drift: items key is missing, changed to 'records'
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            records: [{ id: '1', name: 'Renamed' }],
+            count: 1,
+          }));
+          return;
+        } else if (endpointState === 'NOT_FOUND') {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+      }
+
+      res.writeHead(404);
+      res.end();
+    });
+
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'reval-test-'));
+
+    try {
+      const skillDir = path.join(root, '.agent-forge', 'output', 'reval-skill');
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: baseUrl,
+        path: '/api/reval-items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Reval Store',
+        site_slug: 'reval-store',
+        capability_slug: 'items',
+        parameters: {
+          page: { type: 'integer', in: 'query', name: 'page', default: 1 },
+        },
+        required_keys: ['items'],
+        tested_variations: [
+          { params: { page: 1 }, status: 200, required_keys: ['items'] },
+        ],
+      }), 'utf8');
+
+      await runPythonAsync([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'reval-skill',
+        '--site-name', 'Reval Store',
+        '--site-slug', 'reval-store',
+        '--capability-slug', 'items',
+        '--classification', 'DIRECT_API_VERIFIED',
+        '--endpoint-spec', specFile,
+        '--output-dir', skillDir,
+      ]);
+
+      // Case 1: Healthy endpoint
+      endpointState = 'HEALTHY';
+      const healthyRaw = await runPythonAsync(['revalidate-skill', '--package-dir', skillDir, '--base-url', baseUrl]);
+      const healthy = JSON.parse(healthyRaw);
+      assert.equal(healthy.status, 'HEALTHY');
+      assert.equal(healthy.verified, true);
+
+      // Case 2: Auth expired (401/403)
+      endpointState = 'AUTH_EXPIRED';
+      const expiredRaw = await runPythonAsync(['revalidate-skill', '--package-dir', skillDir, '--base-url', baseUrl]);
+      const expired = JSON.parse(expiredRaw);
+      assert.equal(expired.status, 'AUTH_EXPIRED');
+      assert.equal(expired.verified, false);
+
+      // Case 3: Schema drift (missing required key)
+      endpointState = 'DRIFT_DETECTED';
+      const driftRaw = await runPythonAsync(['revalidate-skill', '--package-dir', skillDir, '--base-url', baseUrl]);
+      const drift = JSON.parse(driftRaw);
+      assert.equal(drift.status, 'DRIFT_DETECTED');
+      assert.equal(drift.verified, false);
+
+      // Case 4: 404 Not Found -> requires re-exploration
+      endpointState = 'NOT_FOUND';
+      const notFoundRaw = await runPythonAsync(['revalidate-skill', '--package-dir', skillDir, '--base-url', baseUrl]);
+      const notFound = JSON.parse(notFoundRaw);
+      assert.equal(notFound.status, 'RE_EXPLORATION_REQUIRED');
+      assert.equal(notFound.verified, false);
+    } finally {
+      server.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('raw HARs, auth material, and private clients remain untracked in git', () => {
+    const gitignoreContent = fs.readFileSync(path.join(REPO_ROOT, '.gitignore'), 'utf8');
+    assert.match(gitignoreContent, /^\.agent-forge\/$/m, '.agent-forge/ must be ignored in git');
+
+    const statusOutput = execSync('git status --porcelain', {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    });
+    assert.doesNotMatch(statusOutput, /\.agent-forge/, 'git status must not track anything in .agent-forge/');
+  });
+});
