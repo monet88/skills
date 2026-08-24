@@ -1,0 +1,14 @@
+NOTE-DEBUGS.md
+  h_17f2fa2b92da6a 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e7f31fdb84415921fb1d40945a5aba7299aca605",
+  "prompts": {},
+  "humans": {
+    "h_17f2fa2b92da6a": {
+      "author": "monet88 <minhthang421992@gmail.com>"
+    }
+  }
+}
