@@ -614,29 +614,53 @@ def generate_skill(args):
             spec = json.loads(spec_path.read_text(encoding="utf-8"))
 
     classification = args.classification or spec.get("classification", "DIRECT_API_VERIFIED")
-    site_name = args.site_name or spec.get("site_name", "Target Site")
-    site_slug = safe_token(args.site_slug or spec.get("site_slug", "site"))
-    capability_slug = safe_token(args.capability_slug or spec.get("capability_slug", "extract-items"))
-    capability_name = f"{site_slug}-{capability_slug}"
+    site_name = args.site_name or spec.get("site_name") or "Target Site"
+    site_slug = safe_token(args.site_slug or spec.get("site_slug") or "site")
+    capability_slug = safe_token(args.capability_slug or spec.get("capability_slug") or "extract-items")
+    capability_name = safe_token(args.skill_name) if args.skill_name else f"{site_slug}-{capability_slug}"
     base_url = spec.get("base_url") or spec.get("url") or "https://example.com"
     endpoint_path = spec.get("path") or "/api/items"
 
-    raw_endpoints = spec.get("endpoints") or [{
-        "id": capability_slug,
-        "method": spec.get("method", "GET"),
-        "path": endpoint_path,
-        "classification": classification,
-        "headers": spec.get("headers", {}),
-        "parameters": spec.get("parameters", {
-            "query": {"type": "string", "in": "query", "name": "q"},
-            "page": {"type": "integer", "in": "query", "name": "page", "default": 1},
-            "limit": {"type": "integer", "in": "query", "name": "limit", "default": 20}
-        }),
-        "verification": {
-            "status": "PASSED" if classification == "DIRECT_API_VERIFIED" else "FALLBACK",
-            "tested_variations": spec.get("tested_variations", [])
-        }
-    }]
+    raw_endpoints = spec.get("endpoints")
+    spec_has_explicit_endpoints = bool(raw_endpoints)  # True when spec provides explicit endpoint IDs
+    if not raw_endpoints:
+        tested_vars = spec.get("verification", {}).get("tested_variations") or spec.get("tested_variations") or []
+        has_evidence = len(tested_vars) >= 1 and any(v.get("status") in (200, 201, 204, "200", "201", "204") for v in tested_vars if isinstance(v, dict))
+        if not has_evidence and classification == "DIRECT_API_VERIFIED":
+            status = "UNVERIFIED"
+        else:
+            status = "PASSED" if (classification == "DIRECT_API_VERIFIED" and has_evidence) else "FALLBACK"
+
+        raw_endpoints = [{
+            "id": capability_slug,
+            "method": spec.get("method", "GET"),
+            "path": endpoint_path,
+            "classification": classification,
+            "headers": spec.get("headers", {}),
+            "parameters": spec.get("parameters", {
+                "query": {"type": "string", "in": "query", "name": "q"},
+                "page": {"type": "integer", "in": "query", "name": "page", "default": 1},
+                "limit": {"type": "integer", "in": "query", "name": "limit", "default": 20}
+            }),
+            "verification": {
+                "status": status,
+                "tested_variations": tested_vars
+            }
+        }]
+    else:
+        for ep in raw_endpoints:
+            ep_class = ep.get("classification", classification)
+            ep_vars = ep.get("verification", {}).get("tested_variations") or ep.get("tested_variations") or spec.get("tested_variations") or []
+            has_ev = len(ep_vars) >= 1 and any(v.get("status") in (200, 201, 204, "200", "201", "204") for v in ep_vars if isinstance(v, dict))
+            if "verification" not in ep or not isinstance(ep.get("verification"), dict):
+                ep["verification"] = {}
+            if "tested_variations" not in ep["verification"]:
+                ep["verification"]["tested_variations"] = ep_vars
+            if "status" not in ep["verification"]:
+                st = "PASSED" if (ep_class == "DIRECT_API_VERIFIED" and has_ev) else ("UNVERIFIED" if ep_class == "DIRECT_API_VERIFIED" else "FALLBACK")
+                ep["verification"]["status"] = st
+            elif ep_class == "DIRECT_API_VERIFIED" and ep["verification"].get("status") == "PASSED" and not has_ev:
+                ep["verification"]["status"] = "UNVERIFIED"
 
     sanitized_endpoints = sanitize_deep(raw_endpoints)
 
@@ -656,28 +680,45 @@ def generate_skill(args):
     (output_dir / "endpoint-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     # 2. Write provenance.json
-    direct_count = sum(1 for ep in sanitized_endpoints if ep.get("classification") == "DIRECT_API_VERIFIED")
+    direct_count = sum(1 for ep in sanitized_endpoints if ep.get("classification") == "DIRECT_API_VERIFIED" and ep.get("verification", {}).get("status") == "PASSED")
     browser_count = sum(1 for ep in sanitized_endpoints if ep.get("classification") == "BROWSER_SESSION_API")
     dom_count = sum(1 for ep in sanitized_endpoints if ep.get("classification") == "DOM_ONLY")
-    hybrid_count = sum(1 for ep in sanitized_endpoints if ep.get("classification") == "HYBRID")
+    has_multiple_types = len({ep.get("classification") for ep in sanitized_endpoints}) > 1
+    hybrid_count = 1 if (classification == "HYBRID" or has_multiple_types) else sum(1 for ep in sanitized_endpoints if ep.get("classification") == "HYBRID")
     all_passed = bool(sanitized_endpoints) and all(
         ep.get("verification", {}).get("status") == "PASSED" for ep in sanitized_endpoints
     )
+
+    # Exploration time: accept from spec evidence if present, otherwise null.
+    exploration_time_s = spec.get("exploration_time_s")
+
+    prov_capabilities = []
+    for ep in sanitized_endpoints:
+        ep_c = ep.get("classification", classification)
+        ep_id = ep.get("id")
+        if len(sanitized_endpoints) == 1:
+            cap_name = capability_name
+        elif ep_id:
+            cap_name = ep.get("name") or ep_id
+        else:
+            cap_name = capability_name
+
+        prov_capabilities.append({
+            "name": cap_name,
+            "method": ep.get("method", "GET"),
+            "classification": ep_c,
+            "steady_state_runtime": "python" if ep_c == "DIRECT_API_VERIFIED" else "agent-browser",
+            "verified_endpoint": sanitize_deep(ep.get("path", endpoint_path))
+        })
 
     provenance = {
         "forge_version": "0.1.0",
         "agent_browser_version": get_live_agent_browser_version(root),
         "target_origin": sanitize_url(base_url),
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "exploration_time_s": exploration_time_s,
         "har_sha256": har_hash,
-        "capabilities": [
-            {
-                "name": capability_name,
-                "classification": classification,
-                "steady_state_runtime": "python" if classification == "DIRECT_API_VERIFIED" else "agent-browser",
-                "verified_endpoint": sanitize_deep(endpoint_path)
-            }
-        ],
+        "capabilities": prov_capabilities,
         "verification_summary": {
             "direct_api_count": direct_count,
             "browser_session_count": browser_count,
@@ -688,8 +729,149 @@ def generate_skill(args):
     }
     (output_dir / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
 
-    # 3. Write client.py if DIRECT_API_VERIFIED
-    if classification == "DIRECT_API_VERIFIED":
+    # 3. Models generation (models.py) when schema is present
+    models_spec = spec.get("models") or {}
+    if models_spec:
+        models_lines = [
+            "from dataclasses import dataclass, field",
+            "from typing import Optional, List, Dict, Any",
+            "",
+        ]
+        for model_name, fields in models_spec.items():
+            models_lines.append("@dataclass")
+            models_lines.append(f"class {model_name}:")
+            if isinstance(fields, dict) and fields:
+                for fname, ftype in fields.items():
+                    py_type = "str"
+                    if ftype in ("int", "integer"):
+                        py_type = "int"
+                    elif ftype in ("float", "number"):
+                        py_type = "float"
+                    elif ftype in ("bool", "boolean"):
+                        py_type = "bool"
+                    elif ftype in ("list", "array"):
+                        py_type = "List[Any]"
+                    elif ftype in ("dict", "object"):
+                        py_type = "Dict[str, Any]"
+                    models_lines.append(f"    {fname}: {py_type} = None")
+            else:
+                models_lines.append("    pass")
+            models_lines.append("")
+        (output_dir / "models.py").write_text("\n".join(models_lines) + "\n", encoding="utf-8")
+
+    # 4. Write client.py if direct endpoints are present
+    has_direct_endpoints = any(ep.get("classification") == "DIRECT_API_VERIFIED" for ep in sanitized_endpoints) or classification == "DIRECT_API_VERIFIED"
+    if has_direct_endpoints:
+        endpoint_methods = []
+        direct_eps = [ep for ep in sanitized_endpoints if ep.get("classification") == "DIRECT_API_VERIFIED"]
+        if not direct_eps:
+            direct_eps = sanitized_endpoints
+
+        for ep in direct_eps:
+            ep_id = safe_token(ep.get("id", "request")).replace("-", "_")
+            ep_method = ep.get("method", "GET").upper()
+            ep_path = ep.get("path", "/api/items")
+
+            # Build param signature from spec parameters for this endpoint
+            ep_params = ep.get("parameters") or {}
+            query_params = {pn: pd for pn, pd in ep_params.items() if isinstance(pd, dict) and pd.get("in") == "query"}
+
+            if ep_method in ("POST", "PUT", "PATCH"):
+                endpoint_methods.append(f'''    def {ep_id}(self, data=None, **kwargs):
+        path = {json.dumps(ep_path)}
+        for k, v in list(kwargs.items()):
+            target = "{{" + k + "}}"
+            if target in path:
+                path = path.replace(target, str(v))
+                kwargs.pop(k)
+        params = kwargs.get("params")
+        body_data = data if data is not None else (kwargs if kwargs else None)
+        return self._request(path, params=params, data=body_data, method={json.dumps(ep_method)})''')
+            elif ep_method == "DELETE":
+                endpoint_methods.append(f'''    def {ep_id}(self, **kwargs):
+        path = {json.dumps(ep_path)}
+        for k, v in list(kwargs.items()):
+            target = "{{" + k + "}}"
+            if target in path:
+                path = path.replace(target, str(v))
+                kwargs.pop(k)
+        params = kwargs.get("params") or {{k: v for k, v in kwargs.items() if v is not None}}
+        return self._request(path, params=params, method="DELETE")''')
+            else:
+                # Build named query parameters from spec so signature matches actual API
+                named_args = []
+                params_build_lines = []
+                for pn, pd in query_params.items():
+                    arg_name = pn.replace("-", "_")
+                    named_args.append(f"{arg_name}=None")
+                    qname = pd.get("name", pn) if isinstance(pd, dict) else pn
+                    params_build_lines.append(f"        if {arg_name} is not None: params[{json.dumps(qname)}] = {arg_name}")
+                named_args_str = (", ".join(named_args) + ", " if named_args else "")
+                params_init = "        params = {}"
+                params_kwargs = "\n        for k, v in kwargs.items():\n            if v is not None: params[k] = v"
+                endpoint_methods.append(f'''    def {ep_id}(self, {named_args_str}**kwargs):
+        path = {json.dumps(ep_path)}
+        for k, v in list(kwargs.items()):
+            target = "{{" + k + "}}"
+            if target in path:
+                path = path.replace(target, str(v))
+                kwargs.pop(k)
+{params_init}
+{chr(10).join(params_build_lines)}{params_kwargs}
+        return self._request(path, params=params, method="GET")''')
+
+        # Backward-compat alias: inject extract_items only for flat-spec (no explicit endpoints in spec).
+        # When spec provides an explicit endpoints array, the generated methods ARE the spec operations.
+        if not spec_has_explicit_endpoints and not any(safe_token(ep.get("id", "")).replace("-", "_") == "extract_items" for ep in direct_eps):
+            first_ep_path = direct_eps[0].get("path", endpoint_path) if direct_eps else endpoint_path
+            endpoint_methods.append(f'''    def extract_items(self, query=None, page=1, limit=20, category=None, **kwargs):
+        """Backward-compatible extraction alias. Delegates to the primary endpoint."""
+        params = {{"q": query, "page": page, "limit": limit, "category": category}}
+        for k, v in kwargs.items():
+            if v is not None: params[k] = v
+        return self._request({json.dumps(first_ep_path)}, params=params, method="GET")''')
+
+        methods_joined = "\n\n".join(endpoint_methods)
+
+        # Determine primary CLI operation from first direct endpoint in spec (spec-driven, not hardcoded)
+        primary_ep = direct_eps[0] if direct_eps else None
+        primary_ep_id = safe_token(primary_ep.get("id", "request")).replace("-", "_") if primary_ep else "request"
+        primary_ep_method = (primary_ep.get("method", "GET").upper()) if primary_ep else "GET"
+        primary_ep_params = (primary_ep.get("parameters") or {}) if primary_ep else {}
+        primary_query_params = {pn: pd for pn, pd in primary_ep_params.items() if isinstance(pd, dict) and pd.get("in") == "query"}
+
+        # Build CLI args and call for primary endpoint (spec-driven)
+        if primary_ep_method in ("POST", "PUT", "PATCH"):
+            cli_args_code = '    parser.add_argument("--data", "-d", help="JSON body data")'
+            cli_call_code = f'    body = json.loads(args.data) if args.data else {{}}\n    result = client.{primary_ep_id}(data=body)'
+        elif primary_ep_method == "DELETE":
+            cli_args_code = '    parser.add_argument("--id", help="Resource ID for path substitution")'
+            cli_call_code = f'    result = client.{primary_ep_id}(id=args.id)'
+        else:
+            cli_arg_lines = []
+            cli_call_args = []
+            for pn, pd in primary_query_params.items():
+                arg_name = pn.replace("-", "_")
+                ptype = pd.get("type", "string") if isinstance(pd, dict) else "string"
+                if ptype in ("integer", "int"):
+                    cli_arg_lines.append(f'    parser.add_argument("--{arg_name}", type=int, help="{arg_name}")')
+                else:
+                    cli_arg_lines.append(f'    parser.add_argument("--{arg_name}", help="{arg_name}")')
+                cli_call_args.append(f"{arg_name}=args.{arg_name}")
+            if not cli_arg_lines:
+                # No spec params -> generic fallback
+                cli_arg_lines = [
+                    '    parser.add_argument("--query", "-q", help="Search query")',
+                    '    parser.add_argument("--page", "-p", type=int, default=1, help="Page number")',
+                    '    parser.add_argument("--limit", "-l", type=int, default=20, help="Page size")',
+                ]
+                cli_call_args = ["query=args.query", "page=args.page", "limit=args.limit"]
+            cli_args_code = "\n".join(cli_arg_lines)
+            cli_call_code = f'    result = client.{primary_ep_id}({", ".join(cli_call_args)})'
+
+        # Embed workspace root for scoped auth discovery (stops walk at generation root)
+        workspace_root_embedded = json.dumps(str(root))
+
         client_code = f'''import argparse
 import json
 import os
@@ -700,6 +882,9 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = {json.dumps(base_url)}
+# Auth discovery is scoped to the originating private workspace.
+# Walk upward only within this boundary; do not cross into unrelated ancestor workspaces.
+_FORGE_WORKSPACE_ROOT = Path({workspace_root_embedded})
 
 
 class APIClient:
@@ -707,11 +892,38 @@ class APIClient:
         self.base_url = base_url.rstrip("/")
         self.auth_token = auth_token or os.environ.get("API_AUTH_TOKEN")
         if not self.auth_token:
-            auth_file = Path(os.getcwd()) / ".agent-forge" / "auth.json"
+            self._discover_auth()
+
+    def _discover_auth(self):
+        """Walk upward from cwd toward _FORGE_WORKSPACE_ROOT looking for auth.json.
+        Stops at _FORGE_WORKSPACE_ROOT so exported clients never discover unrelated ancestor auth."""
+        cur = Path(os.getcwd()).resolve()
+        try:
+            # Check whether cwd is inside the forge workspace; if not, only check cwd.
+            cur.relative_to(_FORGE_WORKSPACE_ROOT)
+            walk_candidates = []
+            p = cur
+            while True:
+                walk_candidates.append(p)
+                if p == _FORGE_WORKSPACE_ROOT:
+                    break
+                parent = p.parent
+                if parent == p:
+                    break
+                p = parent
+        except ValueError:
+            # cwd is outside the originating workspace; only check immediate cwd
+            walk_candidates = [cur]
+
+        for candidate in walk_candidates:
+            auth_file = candidate / ".agent-forge" / "auth.json"
             if auth_file.exists():
                 try:
                     auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
-                    self.auth_token = auth_data.get("token") or auth_data.get("auth_token")
+                    token = auth_data.get("token") or auth_data.get("auth_token")
+                    if token:
+                        self.auth_token = token
+                        return
                 except Exception:
                     pass
 
@@ -745,26 +957,16 @@ class APIClient:
         except Exception as exc:
             return {{"error": True, "code": "REQUEST_FAILED", "message": "HTTP request failed due to client connection error"}}
 
-    def extract_items(self, query=None, page=1, limit=20, category=None):
-        params = {{"q": query, "page": page, "limit": limit, "category": category}}
-        return self._request({json.dumps(endpoint_path)}, params=params)
+{methods_joined}
 
 
 def main():
     parser = argparse.ArgumentParser(description="{capability_name} standalone client")
-    parser.add_argument("--query", "-q", help="Search query")
-    parser.add_argument("--page", "-p", type=int, default=1, help="Page number")
-    parser.add_argument("--limit", "-l", type=int, default=20, help="Page size")
-    parser.add_argument("--category", "-c", help="Category filter")
+{cli_args_code}
     args = parser.parse_args()
 
     client = APIClient()
-    result = client.extract_items(
-        query=args.query,
-        page=args.page,
-        limit=args.limit,
-        category=args.category,
-    )
+{cli_call_code}
     print(json.dumps(result, indent=2))
     if isinstance(result, dict) and result.get("error"):
         sys.exit(1)
@@ -775,7 +977,7 @@ if __name__ == "__main__":
 '''
         (output_dir / "client.py").write_text(client_code, encoding="utf-8")
 
-    # 4. Write script helper in scripts/
+    # 5. Write script helper in scripts/
     feature_script = f'''import argparse
 import json
 import sys
@@ -819,11 +1021,81 @@ if __name__ == "__main__":
 '''
     (scripts_dir / f"{capability_slug}.py").write_text(feature_script, encoding="utf-8")
 
-    # 5. Write SKILL.md
+    # 6. Write README.md — use actual primary endpoint operation from spec (not hardcoded extract_items)
+    all_direct = [ep for ep in sanitized_endpoints if ep.get("classification") == "DIRECT_API_VERIFIED"]
+    readme_primary = all_direct[0] if all_direct else (sanitized_endpoints[0] if sanitized_endpoints else {})
+    readme_ep_id = safe_token(readme_primary.get("id", capability_slug)).replace("-", "_")
+    readme_ep_method = readme_primary.get("method", "GET").upper()
+    readme_ep_path = readme_primary.get("path", endpoint_path)
+    readme_ep_params = readme_primary.get("parameters") or {}
+    readme_query_params = {pn: pd for pn, pd in readme_ep_params.items() if isinstance(pd, dict) and pd.get("in") == "query"}
+
+    if readme_ep_method in ("POST", "PUT", "PATCH"):
+        readme_python_example = f'result = client.{readme_ep_id}(data={{"key": "value"}})'
+        readme_cli_example = f'python client.py --data \'{{"key": "value"}}\''
+    elif readme_ep_method == "DELETE":
+        readme_python_example = f'result = client.{readme_ep_id}(id="123")'
+        readme_cli_example = f'python client.py --id "123"'
+    else:
+        if readme_query_params:
+            first_pn = next(iter(readme_query_params))
+            first_arg = first_pn.replace("-", "_")
+            readme_python_example = f'result = client.{readme_ep_id}({first_arg}="example")'
+            readme_cli_example = f'python client.py --{first_arg} "keyword"'
+        else:
+            readme_python_example = f'result = client.{readme_ep_id}()'
+            readme_cli_example = f'python client.py'
+
+    readme_content = f'''# {site_name} — {capability_name}
+
+> Classification: `{classification}`
+> Reusable skill package for {site_name} generated by `agent-browser-skill-forge`.
+
+## Overview
+- **Target Origin**: `{base_url}`
+- **Classification**: `{classification}`
+- **Generated At**: {time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+
+## Installation & Prerequisites
+- Python 3.8+ (for direct API client operations)
+- `agent-browser` (for browser-session or DOM-fallback interactions)
+
+## Python API Client
+Import the standalone `APIClient` in Python:
+
+```python
+from client import APIClient
+
+client = APIClient(base_url="{base_url}")
+# Execute verified endpoint: {readme_ep_method} {readme_ep_path}
+{readme_python_example}
+print(result)
+```
+
+## CLI Usage
+Run the standalone client from terminal:
+
+```bash
+{readme_cli_example}
+```
+
+## Data Models
+Data models are defined in `models.py` when schema is present.
+
+## Revalidation
+To revalidate this capability against drift or auth expiration:
+
+```bash
+python forge-runtime.py revalidate-skill --package-dir .
+```
+'''
+    (output_dir / "README.md").write_text(readme_content, encoding="utf-8")
+
+    # 7. Write SKILL.md
     if classification == "DIRECT_API_VERIFIED":
         component_section = f'''### Standalone API Client (DIRECT_API_VERIFIED)
 
-`python client.py --query "<query>" --page <page> --limit <limit>`
+`{readme_cli_example}`
 
 Parameters:
 - `--query <string>`: Search keyword or filter.
@@ -942,9 +1214,11 @@ Extract structured item listings from {site_name} with verified parameter variat
         "classification": classification,
         "files": [
             str(output_dir / "SKILL.md"),
+            str(output_dir / "README.md"),
             str(output_dir / "endpoint-manifest.json"),
             str(output_dir / "provenance.json"),
-        ] + ([str(output_dir / "client.py")] if classification == "DIRECT_API_VERIFIED" else [])
+        ] + ([str(output_dir / "client.py")] if has_direct_endpoints else [])
+          + ([str(output_dir / "models.py")] if models_spec else [])
     }
     print(json.dumps(result, indent=2))
 
@@ -1022,7 +1296,10 @@ def export_skill(args):
         fail(f"Invalid package: SKILL.md missing in {pkg_dir}")
 
     dest_dir.mkdir(parents=True, exist_ok=True)
+    EXCLUDED_EXPORT_NAMES = {"auth.json", ".env", "capture.har", "sample.har"}
     for item in pkg_dir.iterdir():
+        if item.name in EXCLUDED_EXPORT_NAMES or item.name.endswith(".har") or item.name == ".agent-forge":
+            continue
         target = dest_dir / item.name
         if item.is_dir():
             shutil.copytree(item, target, dirs_exist_ok=True)
@@ -1075,21 +1352,34 @@ def revalidate_skill(args):
             })
             continue
 
-        # 2. Non-DIRECT_API_VERIFIED classifications require browser session probe
+        # 2. Non-DIRECT_API_VERIFIED classifications: attempt live browser DOM probe
         if ep_class != "DIRECT_API_VERIFIED":
-            all_verified = False
-            if overall_status in ("HEALTHY", "SAFE_REVALIDATION_REQUIRED"):
-                overall_status = "BROWSER_SESSION_REVALIDATION_REQUIRED"
-            tested_endpoints.append({
-                "endpoint": sanitize_deep(ep_path),
-                "method": ep_method,
-                "classification": ep_class,
-                "status": "BROWSER_SESSION_REVALIDATION_REQUIRED",
-                "action": "browser_session_probe",
-                "safe": True,
-                "verified": False,
-                "message": f"Classification '{ep_class}' requires browser session probe, not direct HTTP."
-            })
+            probe_result = _attempt_browser_dom_probe(base_url, ep_path, ep_class)
+            if probe_result["verified"]:
+                tested_endpoints.append({
+                    "endpoint": sanitize_deep(ep_path),
+                    "method": ep_method,
+                    "classification": ep_class,
+                    "status": "BROWSER_DOM_VERIFIED",
+                    "action": "browser_session_probe",
+                    "safe": True,
+                    "verified": True,
+                    "message": probe_result.get("message", "Browser DOM probe succeeded."),
+                })
+            else:
+                all_verified = False
+                if overall_status in ("HEALTHY", "SAFE_REVALIDATION_REQUIRED"):
+                    overall_status = "BROWSER_SESSION_REVALIDATION_REQUIRED"
+                tested_endpoints.append({
+                    "endpoint": sanitize_deep(ep_path),
+                    "method": ep_method,
+                    "classification": ep_class,
+                    "status": "BROWSER_SESSION_REVALIDATION_REQUIRED",
+                    "action": "browser_session_probe",
+                    "safe": True,
+                    "verified": False,
+                    "message": probe_result.get("message", f"Classification '{ep_class}' requires browser session probe."),
+                })
             continue
 
         # 3. DIRECT_API_VERIFIED + SAFE READ METHOD -> Issue live safe HTTP request
@@ -1177,6 +1467,34 @@ def revalidate_skill(args):
     print(json.dumps(sanitize_deep(result), indent=2))
 
 
+def _attempt_browser_dom_probe(base_url, ep_path, ep_class):
+    """Check browser DOM probe readiness for a non-API endpoint.
+    Returns {"verified": bool, "message": str}.
+    Does NOT launch agent-browser (batch file process trees hang on Windows);
+    instead reports availability and the probe URL for the caller to act on."""
+    binary = shutil.which("agent-browser.cmd" if os.name == "nt" else "agent-browser") or shutil.which("agent-browser")
+    target_url = f"{base_url.rstrip('/')}/{ep_path.lstrip('/')}"
+    if not binary:
+        return {
+            "verified": False,
+            "message": (
+                f"agent-browser not found on PATH; {ep_class} endpoint at {target_url} "
+                "requires a live browser session. Install agent-browser and run: "
+                f"agent-browser open '{target_url}' then eval DOM state to revalidate."
+            )
+        }
+    # agent-browser is available — report probe readiness without launching a subprocess
+    return {
+        "verified": False,
+        "message": (
+            f"agent-browser found at {binary}. {ep_class} endpoint at {target_url} "
+            "requires a live browser session for revalidation. "
+            f"Run: agent-browser open '{target_url}' then inspect DOM to confirm endpoint health."
+        )
+    }
+
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="Trusted runtime boundary for agent-browser-skill-forge")
     sub = parser.add_subparsers(dest="action", required=True)
@@ -1220,10 +1538,10 @@ def build_parser():
     p_gen = sub.add_parser("generate-skill")
     p_gen.add_argument("--root", default=os.getcwd())
     p_gen.add_argument("--skill-name", required=True)
-    p_gen.add_argument("--site-name", default="Target Site")
-    p_gen.add_argument("--site-slug", default="site")
-    p_gen.add_argument("--capability-slug", default="extract-items")
-    p_gen.add_argument("--classification", default="DIRECT_API_VERIFIED")
+    p_gen.add_argument("--site-name", default=None)
+    p_gen.add_argument("--site-slug", default=None)
+    p_gen.add_argument("--capability-slug", default=None)
+    p_gen.add_argument("--classification", default=None)
     p_gen.add_argument("--endpoint-spec")
     p_gen.add_argument("--har-path")
     p_gen.add_argument("--output-dir")

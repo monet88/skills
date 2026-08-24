@@ -1385,7 +1385,10 @@ print(json.dumps(res))
             method: 'GET',
             path: '/items',
             classification: 'DIRECT_API_VERIFIED',
-            verification: { status: 'PASSED' },
+            verification: {
+              status: 'PASSED',
+              tested_variations: [{ params: { page: 1 }, status: 200 }],
+            },
           },
         ],
       }), 'utf8');
@@ -1636,6 +1639,606 @@ print(json.dumps(res))
       assert.match(clientOutput, /AUTH_EXPIRED/, 'Client must return structured AUTH_EXPIRED diagnostic');
     } finally {
       server.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: generate-skill emits README.md and infers metadata when CLI options are omitted', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'readme-infer-test-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: 'https://inferred-api.example.com',
+        path: '/api/v1/goods',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Inferred Shop',
+        site_slug: 'inferred-shop',
+        capability_slug: 'search-goods',
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'inferred-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const gen = JSON.parse(genRaw);
+      const skillDir = gen.output_dir;
+
+      assert.ok(fs.existsSync(path.join(skillDir, 'README.md')), 'README.md must be generated in skill package');
+      const readmeContent = fs.readFileSync(path.join(skillDir, 'README.md'), 'utf8');
+      assert.match(readmeContent, /Inferred Shop/, 'README must include inferred site name');
+      assert.match(readmeContent, /https:\/\/inferred-api\.example\.com/, 'README must include target origin');
+      assert.match(readmeContent, /revalidate-skill/, 'README must include revalidation command');
+
+      const manifest = JSON.parse(fs.readFileSync(path.join(skillDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifest.target_origin, 'https://inferred-api.example.com');
+      assert.equal(manifest.endpoints[0].path, '/api/v1/goods');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: generated client.py supports dynamic methods with path parameters and parent auth discovery', async () => {
+    const http = await import('node:http');
+
+    const server = http.createServer(async (req, res) => {
+      const auth = req.headers['authorization'];
+      if (auth !== 'Bearer parent-discovered-token-xyz') {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: true, code: 'UNAUTHORIZED' }));
+        return;
+      }
+
+      if (req.method === 'GET' && req.url === '/api/v1/items/42?format=json') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ id: '42', name: 'Item 42' }));
+        return;
+      }
+
+      if (req.method === 'POST' && req.url === '/api/v1/items') {
+        let body = '';
+        for await (const chunk of req) body += chunk;
+        const parsed = JSON.parse(body || '{}');
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ created: true, name: parsed.name }));
+        return;
+      }
+
+      if (req.method === 'DELETE' && req.url === '/api/v1/items/42') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ deleted: true, id: '42' }));
+        return;
+      }
+
+      res.writeHead(404);
+      res.end();
+    });
+
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'client-methods-test-'));
+
+    try {
+      // Write parent auth.json in root
+      const parentForge = path.join(root, '.agent-forge');
+      fs.mkdirSync(parentForge, { recursive: true });
+      fs.writeFileSync(path.join(parentForge, 'auth.json'), JSON.stringify({ token: 'parent-discovered-token-xyz' }), 'utf8');
+
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: baseUrl,
+        path: '/api/v1/items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        endpoints: [
+          { id: 'get-item', method: 'GET', path: '/api/v1/items/{id}', classification: 'DIRECT_API_VERIFIED' },
+          { id: 'create-item', method: 'POST', path: '/api/v1/items', classification: 'DIRECT_API_VERIFIED' },
+          { id: 'delete-item', method: 'DELETE', path: '/api/v1/items/{id}', classification: 'DIRECT_API_VERIFIED' },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'methods-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const gen = JSON.parse(genRaw);
+      const skillDir = gen.output_dir;
+
+      // Run python from nested subdir without setting API_AUTH_TOKEN in env -> verifies upward walk to root/.agent-forge/auth.json
+      const nestedSubdir = path.join(root, 'nested', 'deep', 'workdir');
+      fs.mkdirSync(nestedSubdir, { recursive: true });
+
+      const testScript = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(skillDir)})
+from client import APIClient
+
+client = APIClient()
+# GET with path replacement and extra query params
+get_res = client.get_item(id=42, format="json")
+# POST with data payload
+post_res = client.create_item(name="NewWidget")
+# DELETE with path replacement
+del_res = client.delete_item(id=42)
+
+print(json.dumps({"get": get_res, "post": post_res, "delete": del_res}))
+`;
+
+      const execResult = await execFileAsync(PYTHON, ['-c', testScript], {
+        cwd: nestedSubdir,
+        encoding: 'utf8',
+      });
+      const parsedOutput = JSON.parse(execResult.stdout);
+      assert.equal(parsedOutput.get.id, '42');
+      assert.equal(parsedOutput.post.created, true);
+      assert.equal(parsedOutput.post.name, 'NewWidget');
+      assert.equal(parsedOutput.delete.deleted, true);
+    } finally {
+      server.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: export-skill strips auth.json, .env, and HAR capture files from exported destination', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'export-strip-test-'));
+
+    try {
+      const pkgDir = path.join(root, '.agent-forge', 'output', 'strip-skill');
+      fs.mkdirSync(pkgDir, { recursive: true });
+      fs.writeFileSync(path.join(pkgDir, 'SKILL.md'), '---\nname: strip-skill\n---\n# Strip Skill', 'utf8');
+      fs.writeFileSync(path.join(pkgDir, 'README.md'), '# Strip Skill README', 'utf8');
+      fs.writeFileSync(path.join(pkgDir, 'endpoint-manifest.json'), JSON.stringify({ skill_name: 'strip-skill' }), 'utf8');
+      fs.writeFileSync(path.join(pkgDir, 'provenance.json'), JSON.stringify({ target_origin: 'https://example.com' }), 'utf8');
+      fs.writeFileSync(path.join(pkgDir, 'client.py'), '# client code', 'utf8');
+      fs.writeFileSync(path.join(pkgDir, 'auth.json'), JSON.stringify({ token: 'secret-token' }), 'utf8');
+      fs.writeFileSync(path.join(pkgDir, '.env'), 'SECRET_KEY=12345', 'utf8');
+      fs.writeFileSync(path.join(pkgDir, 'capture.har'), JSON.stringify({ log: {} }), 'utf8');
+      fs.writeFileSync(path.join(pkgDir, 'sample.har'), JSON.stringify({ log: {} }), 'utf8');
+
+      const destDir = path.join(root, 'exported', 'strip-skill');
+      const exportRaw = runPython([
+        'export-skill',
+        '--package-dir', pkgDir,
+        '--destination', destDir,
+      ]);
+      const exportRes = JSON.parse(exportRaw);
+      assert.equal(exportRes.exported, true);
+
+      // Verify essential files copied
+      assert.ok(fs.existsSync(path.join(destDir, 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(destDir, 'README.md')));
+      assert.ok(fs.existsSync(path.join(destDir, 'endpoint-manifest.json')));
+      assert.ok(fs.existsSync(path.join(destDir, 'provenance.json')));
+      assert.ok(fs.existsSync(path.join(destDir, 'client.py')));
+
+      // Verify sensitive files stripped
+      assert.equal(fs.existsSync(path.join(destDir, 'auth.json')), false, 'auth.json must not be exported');
+      assert.equal(fs.existsSync(path.join(destDir, '.env')), false, '.env must not be exported');
+      assert.equal(fs.existsSync(path.join(destDir, 'capture.har')), false, 'capture.har must not be exported');
+      assert.equal(fs.existsSync(path.join(destDir, 'sample.har')), false, 'sample.har must not be exported');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: DIRECT_API_VERIFIED endpoint with prefilled PASSED status but no successful tested_variations is downgraded to UNVERIFIED and not counted in provenance', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'evidence-gate-test-'));
+
+    try {
+      // 1. Endpoint with prefilled PASSED but empty tested_variations
+      const emptyVarsSpec = path.join(root, 'empty-vars-spec.json');
+      fs.writeFileSync(emptyVarsSpec, JSON.stringify({
+        base_url: 'https://example.com',
+        path: '/items',
+        classification: 'DIRECT_API_VERIFIED',
+        endpoints: [
+          {
+            id: 'empty-vars-ep',
+            method: 'GET',
+            path: '/items',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: {
+              status: 'PASSED',
+              tested_variations: [],
+            },
+          },
+        ],
+      }), 'utf8');
+
+      runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'empty-vars-skill',
+        '--endpoint-spec', emptyVarsSpec,
+      ]);
+
+      const emptySkillDir = path.join(root, '.agent-forge', 'output', 'empty-vars-skill');
+      const emptyManifest = JSON.parse(fs.readFileSync(path.join(emptySkillDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(emptyManifest.endpoints[0].verification.status, 'UNVERIFIED', 'Status must be downgraded to UNVERIFIED when tested_variations is empty');
+
+      const emptyProv = JSON.parse(fs.readFileSync(path.join(emptySkillDir, 'provenance.json'), 'utf8'));
+      assert.equal(emptyProv.verification_summary.direct_api_count, 0, 'Provenance must not count unverified endpoint as direct_api_count');
+      assert.equal(emptyProv.verification_summary.all_passed, false, 'all_passed must be false when endpoint is downgraded to UNVERIFIED');
+
+      // 2. Endpoint with prefilled PASSED and only failing variations (e.g. status 500)
+      const failedVarsSpec = path.join(root, 'failed-vars-spec.json');
+      fs.writeFileSync(failedVarsSpec, JSON.stringify({
+        base_url: 'https://example.com',
+        path: '/items',
+        classification: 'DIRECT_API_VERIFIED',
+        endpoints: [
+          {
+            id: 'failed-vars-ep',
+            method: 'GET',
+            path: '/items',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: {
+              status: 'PASSED',
+              tested_variations: [{ params: { q: 'fail' }, status: 500 }],
+            },
+          },
+        ],
+      }), 'utf8');
+
+      runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'failed-vars-skill',
+        '--endpoint-spec', failedVarsSpec,
+      ]);
+
+      const failedSkillDir = path.join(root, '.agent-forge', 'output', 'failed-vars-skill');
+      const failedManifest = JSON.parse(fs.readFileSync(path.join(failedSkillDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(failedManifest.endpoints[0].verification.status, 'UNVERIFIED', 'Status must be downgraded to UNVERIFIED when tested_variations has no 200/201/204');
+
+      const failedProv = JSON.parse(fs.readFileSync(path.join(failedSkillDir, 'provenance.json'), 'utf8'));
+      assert.equal(failedProv.verification_summary.direct_api_count, 0, 'Provenance direct_api_count must be 0');
+      assert.equal(failedProv.verification_summary.all_passed, false, 'all_passed must be false');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+});
+
+describe('agent-browser-skill-forge Issue #14 (Coordinator-Confirmed Blocker Regressions)', () => {
+  test('regression: spec-driven CLI invokes correct endpoint operation, not invented extract_items', async () => {
+    const http = await import('node:http');
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      if (url.pathname === '/api/v2/search' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ results: [{ id: '1', name: url.searchParams.get('keyword') }], total: 1 }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'spec-cli-test-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: baseUrl,
+        path: '/api/v2/search',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        endpoints: [
+          {
+            id: 'search-results',
+            method: 'GET',
+            path: '/api/v2/search',
+            classification: 'DIRECT_API_VERIFIED',
+            parameters: {
+              keyword: { type: 'string', in: 'query', name: 'keyword' },
+            },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'search-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const gen = JSON.parse(genRaw);
+      const skillDir = gen.output_dir;
+
+      // 1. Check that client.py contains search_results method, not invented extract_items
+      const clientSrc = fs.readFileSync(path.join(skillDir, 'client.py'), 'utf8');
+      assert.match(clientSrc, /def search_results\(/, 'client.py must have search_results method from spec');
+      assert.doesNotMatch(clientSrc, /def extract_items\(/, 'client.py must NOT contain invented extract_items when spec defines real endpoints');
+
+      // 2. CLI must invoke search_results, not extract_items
+      assert.match(clientSrc, /client\.search_results\(/, 'main() CLI must call client.search_results() from spec, not extract_items');
+      assert.doesNotMatch(clientSrc, /client\.extract_items\(/, 'main() CLI must NOT call invented extract_items');
+
+      // 3. CLI --keyword arg must exist (from spec parameters)
+      assert.match(clientSrc, /--keyword/, 'CLI must expose --keyword arg from spec parameters');
+
+      // 4. Actually run the CLI with --keyword and verify correct server call
+      const cliResult = await execFileAsync(PYTHON, [path.join(skillDir, 'client.py'), '--keyword', 'widget'], {
+        encoding: 'utf8',
+        env: { ...process.env, API_AUTH_TOKEN: '' },
+      });
+      const parsed = JSON.parse(cliResult.stdout);
+      assert.equal(parsed.results[0].name, 'widget', 'CLI must pass --keyword to correct endpoint');
+    } finally {
+      server.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: generated client auth discovery stops at workspace root (does not walk into ancestor dirs)', async () => {
+    const http = await import('node:http');
+    const server = http.createServer((req, res) => {
+      const auth = req.headers['authorization'];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ token_used: auth || 'none' }));
+    });
+
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    // Two sibling roots: targetRoot with an auth, ancestorRoot as parent of both
+    const outerRoot = fs.mkdtempSync(path.join(privateTests, 'auth-scope-outer-'));
+    const targetRoot = path.join(outerRoot, 'workspace');
+    fs.mkdirSync(targetRoot, { recursive: true });
+
+    try {
+      // Write auth ONLY inside targetRoot
+      const targetForge = path.join(targetRoot, '.agent-forge');
+      fs.mkdirSync(targetForge, { recursive: true });
+      fs.writeFileSync(path.join(targetForge, 'auth.json'), JSON.stringify({ token: 'workspace-specific-token' }), 'utf8');
+
+      // Write DIFFERENT auth in the ancestor (outerRoot)
+      const ancestorForge = path.join(outerRoot, '.agent-forge');
+      fs.mkdirSync(ancestorForge, { recursive: true });
+      fs.writeFileSync(path.join(ancestorForge, 'auth.json'), JSON.stringify({ token: 'ancestor-token-must-not-be-used' }), 'utf8');
+
+      const specFile = path.join(targetRoot, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: baseUrl,
+        path: '/api/items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', targetRoot,
+        '--skill-name', 'auth-scope-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const gen = JSON.parse(genRaw);
+      const skillDir = gen.output_dir;
+
+      // Run client from INSIDE workspace — should pick up workspace-specific-token (not ancestor)
+      const insideWorkdir = path.join(targetRoot, 'nested', 'deep');
+      fs.mkdirSync(insideWorkdir, { recursive: true });
+      const script = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(skillDir)})
+from client import APIClient
+client = APIClient()
+print(json.dumps({"token": client.auth_token}))
+`;
+      const execRes = await execFileAsync(PYTHON, ['-c', script], {
+        cwd: insideWorkdir,
+        encoding: 'utf8',
+        env: { ...process.env, API_AUTH_TOKEN: '' },
+      });
+      const parsed = JSON.parse(execRes.stdout);
+      assert.equal(parsed.token, 'workspace-specific-token', 'Client must discover workspace auth when run inside workspace');
+      assert.notEqual(parsed.token, 'ancestor-token-must-not-be-used', 'Client must NOT discover ancestor auth');
+
+      // Run client from OUTSIDE workspace (e.g., the outerRoot itself)
+      const outsideWorkdir = path.join(outerRoot, 'some-other-project');
+      fs.mkdirSync(outsideWorkdir, { recursive: true });
+      const scriptOutside = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(skillDir)})
+from client import APIClient
+client = APIClient()
+print(json.dumps({"token": client.auth_token or "none"}))
+`;
+      const execOutside = await execFileAsync(PYTHON, ['-c', scriptOutside], {
+        cwd: outsideWorkdir,
+        encoding: 'utf8',
+        env: { ...process.env, API_AUTH_TOKEN: '' },
+      });
+      const parsedOutside = JSON.parse(execOutside.stdout);
+      // Outside the workspace: must NOT find workspace auth, must NOT find ancestor auth
+      assert.notEqual(parsedOutside.token, 'workspace-specific-token', 'Exported client run outside workspace must not discover workspace auth');
+      assert.notEqual(parsedOutside.token, 'ancestor-token-must-not-be-used', 'Exported client must not discover ancestor auth from unrelated project');
+    } finally {
+      server.close();
+      try { fs.rmSync(outerRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: exploration_time_s is recorded distinctly in provenance when supplied in spec', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'exploration-time-test-'));
+
+    try {
+      // 1. With exploration_time_s in spec -> must appear in provenance
+      const specWithTime = path.join(root, 'spec-with-time.json');
+      fs.writeFileSync(specWithTime, JSON.stringify({
+        base_url: 'https://example.com',
+        path: '/api/items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        exploration_time_s: 42.5,
+      }), 'utf8');
+
+      runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'timed-skill',
+        '--endpoint-spec', specWithTime,
+      ]);
+
+      const timedProv = JSON.parse(fs.readFileSync(path.join(root, '.agent-forge', 'output', 'timed-skill', 'provenance.json'), 'utf8'));
+      assert.ok('exploration_time_s' in timedProv, 'provenance.json must have exploration_time_s field');
+      assert.equal(timedProv.exploration_time_s, 42.5, 'exploration_time_s must record the value from spec');
+
+      // 2. Without exploration_time_s in spec -> field must still exist but be null
+      const specNoTime = path.join(root, 'spec-no-time.json');
+      fs.writeFileSync(specNoTime, JSON.stringify({
+        base_url: 'https://example.com',
+        path: '/api/items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+      }), 'utf8');
+
+      runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'untimed-skill',
+        '--endpoint-spec', specNoTime,
+      ]);
+
+      const untimedProv = JSON.parse(fs.readFileSync(path.join(root, '.agent-forge', 'output', 'untimed-skill', 'provenance.json'), 'utf8'));
+      assert.ok('exploration_time_s' in untimedProv, 'provenance.json must always have exploration_time_s key');
+      assert.equal(untimedProv.exploration_time_s, null, 'exploration_time_s must be null when not provided in spec');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: README references correct endpoint operation from spec, not hardcoded extract_items', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'readme-spec-driven-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: 'https://api.example.com',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Example Shop',
+        endpoints: [
+          {
+            id: 'list-products',
+            method: 'GET',
+            path: '/v2/products',
+            classification: 'DIRECT_API_VERIFIED',
+            parameters: {
+              category: { type: 'string', in: 'query', name: 'category' },
+            },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'shop-products',
+        '--endpoint-spec', specFile,
+      ]);
+      const gen = JSON.parse(genRaw);
+      const skillDir = gen.output_dir;
+
+      const readmeContent = fs.readFileSync(path.join(skillDir, 'README.md'), 'utf8');
+      // README must reference actual endpoint operation
+      assert.match(readmeContent, /list_products/, 'README must reference list_products (from spec endpoint id), not invented method');
+      assert.doesNotMatch(readmeContent, /extract_items/, 'README must NOT reference hardcoded extract_items');
+      // README must reference actual path
+      assert.match(readmeContent, /\/v2\/products/, 'README must reference actual endpoint path');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: HYBRID spec generates client methods for all DIRECT_API_VERIFIED endpoints and browser strategy in SKILL.md', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'hybrid-gen-test-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: 'https://hybrid.example.com',
+        classification: 'HYBRID',
+        site_name: 'Hybrid Site',
+        site_slug: 'hybrid-site',
+        endpoints: [
+          {
+            id: 'api-list',
+            method: 'GET',
+            path: '/api/items',
+            classification: 'DIRECT_API_VERIFIED',
+            parameters: {
+              q: { type: 'string', in: 'query', name: 'q' },
+            },
+            verification: { status: 'PASSED', tested_variations: [{ params: { q: 'test' }, status: 200 }] },
+          },
+          {
+            id: 'dom-detail',
+            method: 'GET',
+            path: '/items/{id}',
+            classification: 'DOM_ONLY',
+            verification: { status: 'FALLBACK', tested_variations: [] },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'hybrid-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const gen = JSON.parse(genRaw);
+      const skillDir = gen.output_dir;
+
+      // client.py must exist (DIRECT_API_VERIFIED endpoint present)
+      assert.ok(fs.existsSync(path.join(skillDir, 'client.py')), 'client.py must be generated for HYBRID skill with DIRECT_API_VERIFIED endpoint');
+
+      // client.py must have api_list method from spec
+      const clientSrc = fs.readFileSync(path.join(skillDir, 'client.py'), 'utf8');
+      assert.match(clientSrc, /def api_list\(/, 'client.py must have api_list method from spec');
+      assert.doesNotMatch(clientSrc, /def extract_items\(/, 'client.py must NOT contain invented extract_items');
+
+      // Manifest must have both endpoints
+      const manifest = JSON.parse(fs.readFileSync(path.join(skillDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifest.endpoints.length, 2, 'Manifest must have both endpoints');
+      const directEp = manifest.endpoints.find(e => e.id === 'api-list');
+      const domEp = manifest.endpoints.find(e => e.id === 'dom-detail');
+      assert.ok(directEp, 'Manifest must have api-list endpoint');
+      assert.ok(domEp, 'Manifest must have dom-detail endpoint');
+
+      // Provenance must count HYBRID correctly
+      const prov = JSON.parse(fs.readFileSync(path.join(skillDir, 'provenance.json'), 'utf8'));
+      assert.ok(prov.verification_summary.hybrid_count >= 1, 'Provenance must count hybrid_count >= 1 for HYBRID classification');
+    } finally {
       try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
     }
   });
