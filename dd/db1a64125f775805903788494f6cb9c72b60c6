@@ -1,0 +1,30 @@
+.gitignore
+  h_17f2fa2b92da6a 22-24
+skills/agent-browser-skill-forge/SKILL.md
+  h_17f2fa2b92da6a 1-148
+skills/agent-browser-skill-forge/agents/openai.yaml
+  h_17f2fa2b92da6a 1-9
+skills/agent-browser-skill-forge/references/exploration_extraction.md
+  h_17f2fa2b92da6a 1-43
+skills/agent-browser-skill-forge/references/exploration_operation.md
+  h_17f2fa2b92da6a 1-59
+skills/agent-browser-skill-forge/references/output_template.md
+  h_17f2fa2b92da6a 1-34
+skills/agent-browser-skill-forge/scripts/forge-runtime.py
+  h_17f2fa2b92da6a 1-240
+tests/acceptance.test.mjs
+  h_17f2fa2b92da6a 272
+tests/agent-browser-skill-forge.test.mjs
+  h_17f2fa2b92da6a 1-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "dddb1a64125f775805903788494f6cb9c72b60c6",
+  "prompts": {},
+  "humans": {
+    "h_17f2fa2b92da6a": {
+      "author": "monet88 <minhthang421992@gmail.com>"
+    }
+  }
+}
