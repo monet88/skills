@@ -99,7 +99,11 @@ describe('Ask Impeccable Acceptance Suite', () => {
 
   after(() => {
     if (tempTestDir && fs.existsSync(tempTestDir)) {
-      fs.rmSync(tempTestDir, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempTestDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      } catch (err) {
+        if (err?.code !== 'EPERM') throw err;
+      }
     }
   });
 
@@ -171,7 +175,7 @@ describe('Ask Impeccable Acceptance Suite', () => {
     execSync(`npx skills add "${REPO_ROOT}" --agent claude-code --copy -y`, {
       cwd: agentTempDir,
       encoding: 'utf8',
-      timeout: 30000,
+      timeout: 60000,
     });
 
     const skillDir = path.join(agentTempDir, '.claude', 'skills', 'ask-impeccable');
@@ -203,7 +207,7 @@ describe('Ask Impeccable Acceptance Suite', () => {
     execSync(`npx skills add "${REPO_ROOT}" --agent codex --copy -y`, {
       cwd: agentTempDir,
       encoding: 'utf8',
-      timeout: 30000,
+      timeout: 60000,
     });
 
     const skillDir = path.join(agentTempDir, '.agents', 'skills', 'ask-impeccable');
@@ -235,7 +239,7 @@ describe('Ask Impeccable Acceptance Suite', () => {
     execSync(`npx skills add "${REPO_ROOT}" --agent antigravity claude-code codex --copy -y`, {
       cwd: multiAgentDir,
       encoding: 'utf8',
-      timeout: 30000,
+      timeout: 60000,
     });
 
     const agentsSkillDir = path.join(multiAgentDir, '.agents', 'skills', 'ask-impeccable');

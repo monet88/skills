@@ -218,6 +218,127 @@ def execute(args):
     raise SystemExit(completed.returncode)
 
 
+EXCLUDED_METADATA_KEYS = {
+    "required_keys", "required_key", "pagination_key",
+    "key_count", "sort_key", "partition_key", "primary_key"
+}
+
+SENSITIVE_KEY_SUBSTRINGS = (
+    "auth", "token", "cookie", "secret", "password",
+    "credential", "session", "jwt", "api_key", "access_token",
+    "csrf", "bearer", "authorization"
+)
+
+
+def is_sensitive_key(key):
+    if not isinstance(key, str):
+        return False
+    lower_k = key.lower().strip()
+    if lower_k in EXCLUDED_METADATA_KEYS:
+        return False
+    if any(s in lower_k for s in SENSITIVE_KEY_SUBSTRINGS):
+        return True
+    if lower_k == "key" or lower_k.endswith("_key") or lower_k.endswith("key"):
+        return True
+    return False
+
+
+def sanitize_url(url_str):
+    if not isinstance(url_str, str):
+        return url_str
+    try:
+        parsed = urllib.parse.urlparse(url_str)
+        if parsed.scheme and (parsed.netloc or parsed.path):
+            qs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+            if qs:
+                new_qs = []
+                for qk, qv in qs:
+                    if is_sensitive_key(qk):
+                        new_qs.append((qk, "[REDACTED]"))
+                    else:
+                        new_qs.append((qk, qv))
+                new_query = urllib.parse.urlencode(new_qs)
+                return urllib.parse.urlunparse((
+                    parsed.scheme, parsed.netloc, parsed.path,
+                    parsed.params, new_query, parsed.fragment
+                ))
+    except Exception:
+        pass
+    return url_str
+
+
+def sanitize_text(text):
+    if not isinstance(text, str):
+        return text
+    url_pattern = re.compile(r'https?://[^\s"\'<>]+')
+    def replace_url(match):
+        return sanitize_url(match.group(0))
+    text = url_pattern.sub(replace_url, text)
+    text = re.sub(r'(?i)\bBearer\s+[A-Za-z0-9_\-\.\+\/=]+', 'Bearer [REDACTED]', text)
+    for k in SENSITIVE_KEY_SUBSTRINGS:
+        text = re.sub(rf'(?i)([\?&;,\s]|^)({k}[a-z0-9_]*)=([^\s&,;"]+)', r'\1\2=[REDACTED]', text)
+    return text
+
+
+def sanitize_deep(obj):
+    if obj is None:
+        return None
+    if isinstance(obj, str):
+        return sanitize_text(obj)
+    if isinstance(obj, (int, float, bool)):
+        return obj
+    if isinstance(obj, list):
+        return [sanitize_deep(item) for item in obj]
+    if isinstance(obj, dict):
+        sanitized = {}
+        is_name_val_sensitive = False
+        if "name" in obj and isinstance(obj["name"], str) and is_sensitive_key(obj["name"]):
+            is_name_val_sensitive = True
+
+        for k, v in obj.items():
+            if is_name_val_sensitive and k == "value":
+                sanitized[k] = "[REDACTED]"
+            elif is_sensitive_key(k):
+                if isinstance(v, str):
+                    if v.lower().startswith("bearer "):
+                        sanitized[k] = "Bearer [REDACTED]"
+                    else:
+                        sanitized[k] = "[REDACTED]"
+                elif isinstance(v, dict):
+                    clean_dict = dict(v)
+                    if "default" in clean_dict:
+                        clean_dict["default"] = "[REDACTED]"
+                    sanitized[k] = clean_dict
+                else:
+                    sanitized[k] = "[REDACTED]"
+            else:
+                sanitized[k] = sanitize_deep(v)
+        return sanitized
+    return obj
+
+
+def get_live_agent_browser_version(root=None):
+    if root:
+        runs_dir = Path(root) / PRIVATE_DIR / "runs"
+        if runs_dir.exists():
+            for rdir in sorted(runs_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+                rt_file = rdir / "runtime.json"
+                if rt_file.exists():
+                    try:
+                        rt_data = json.loads(rt_file.read_text(encoding="utf-8"))
+                        if rt_data.get("agent_browser_version") or rt_data.get("version"):
+                            return rt_data.get("agent_browser_version") or rt_data.get("version")
+                    except Exception:
+                        pass
+    try:
+        proc = subprocess.run(["agent-browser", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    except Exception:
+        pass
+    return "agent-browser (version unavailable)"
+
+
 def har_analyze(args):
     har_file = Path(args.har).resolve()
     if not har_file.exists():
@@ -282,7 +403,7 @@ def har_analyze(args):
         "candidate_count": len(candidates),
         "candidates": candidates,
     }
-    print(json.dumps(result, indent=2))
+    print(json.dumps(sanitize_deep(result), indent=2))
 
 
 def verify_endpoint(args):
@@ -432,63 +553,23 @@ def verify_endpoint(args):
         "tested_variations": tested_results,
         "reason": failure_reason if not (all_passed and variation_verified) else None,
     }
-    print(json.dumps(output, indent=2))
-
-
-def sanitize_headers(headers):
-    if not headers or not isinstance(headers, dict):
-        return headers
-    sanitized = {}
-    for k, v in headers.items():
-        lower_k = str(k).lower()
-        if any(s in lower_k for s in ("auth", "token", "cookie", "key", "secret", "session", "credential", "password")):
-            sanitized[k] = "[REDACTED]"
-        else:
-            sanitized[k] = v
-    return sanitized
-
-
-def sanitize_params(params):
-    if not params or not isinstance(params, dict):
-        return params
-    sanitized = {}
-    for k, v in params.items():
-        if isinstance(v, dict):
-            clean_v = dict(v)
-            if "default" in clean_v:
-                lower_name = str(clean_v.get("name", k)).lower()
-                if any(s in lower_name for s in ("auth", "token", "key", "secret", "password", "credential")):
-                    clean_v["default"] = "[REDACTED]"
-            sanitized[k] = clean_v
-        else:
-            lower_k = str(k).lower()
-            if any(s in lower_k for s in ("auth", "token", "key", "secret", "password", "credential")):
-                sanitized[k] = "[REDACTED]"
-            else:
-                sanitized[k] = v
-    return sanitized
-
-
-def sanitize_variations(variations):
-    if not variations or not isinstance(variations, list):
-        return variations
-    sanitized = []
-    for v in variations:
-        if isinstance(v, dict):
-            sv = dict(v)
-            if "headers" in sv:
-                sv["headers"] = sanitize_headers(sv["headers"])
-            if "params" in sv:
-                sv["params"] = sanitize_params(sv["params"])
-            sanitized.append(sv)
-        else:
-            sanitized.append(v)
-    return sanitized
+    print(json.dumps(sanitize_deep(output), indent=2))
 
 
 def generate_skill(args):
     root = resolve_root(args.root)
-    output_dir = Path(args.output_dir).resolve() if args.output_dir else root / PRIVATE_DIR / "output" / safe_token(args.skill_name)
+    allowed_output_base = (root / PRIVATE_DIR / "output").resolve()
+    if args.output_dir:
+        requested_dir = Path(args.output_dir).resolve()
+        try:
+            requested_dir.relative_to(allowed_output_base)
+            output_dir = requested_dir
+        except ValueError:
+            fail(f"Generated output must stay under {allowed_output_base}; writing elsewhere is only via explicit export-skill")
+    else:
+        skill_slug = safe_token(args.skill_name)
+        output_dir = allowed_output_base / skill_slug
+
     output_dir.mkdir(parents=True, exist_ok=True)
     scripts_dir = output_dir / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
@@ -524,20 +605,7 @@ def generate_skill(args):
         }
     }]
 
-    # Sanitize secrets in endpoints metadata
-    sanitized_endpoints = []
-    for ep in raw_endpoints:
-        clean_ep = dict(ep)
-        if "headers" in clean_ep:
-            clean_ep["headers"] = sanitize_headers(clean_ep["headers"])
-        if "parameters" in clean_ep:
-            clean_ep["parameters"] = sanitize_params(clean_ep["parameters"])
-        if "verification" in clean_ep and isinstance(clean_ep["verification"], dict):
-            clean_v = dict(clean_ep["verification"])
-            if "tested_variations" in clean_v:
-                clean_v["tested_variations"] = sanitize_variations(clean_v["tested_variations"])
-            clean_ep["verification"] = clean_v
-        sanitized_endpoints.append(clean_ep)
+    sanitized_endpoints = sanitize_deep(raw_endpoints)
 
     har_hash = spec.get("har_sha256") or "0" * 64
     if args.har_path:
@@ -548,17 +616,25 @@ def generate_skill(args):
     # 1. Write endpoint-manifest.json
     manifest = {
         "skill_name": capability_name,
-        "target_origin": base_url,
+        "target_origin": sanitize_url(base_url),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "endpoints": sanitized_endpoints
     }
     (output_dir / "endpoint-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     # 2. Write provenance.json
+    direct_count = sum(1 for ep in sanitized_endpoints if ep.get("classification") == "DIRECT_API_VERIFIED")
+    browser_count = sum(1 for ep in sanitized_endpoints if ep.get("classification") == "BROWSER_SESSION_API")
+    dom_count = sum(1 for ep in sanitized_endpoints if ep.get("classification") == "DOM_ONLY")
+    hybrid_count = sum(1 for ep in sanitized_endpoints if ep.get("classification") == "HYBRID")
+    all_passed = bool(sanitized_endpoints) and all(
+        ep.get("verification", {}).get("status") == "PASSED" for ep in sanitized_endpoints
+    )
+
     provenance = {
         "forge_version": "0.1.0",
-        "agent_browser_version": "agent-browser 0.34.0",
-        "target_origin": base_url,
+        "agent_browser_version": get_live_agent_browser_version(root),
+        "target_origin": sanitize_url(base_url),
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "har_sha256": har_hash,
         "capabilities": [
@@ -566,14 +642,15 @@ def generate_skill(args):
                 "name": capability_name,
                 "classification": classification,
                 "steady_state_runtime": "python" if classification == "DIRECT_API_VERIFIED" else "agent-browser",
-                "verified_endpoint": endpoint_path
+                "verified_endpoint": sanitize_deep(endpoint_path)
             }
         ],
         "verification_summary": {
-            "direct_api_count": 1 if classification == "DIRECT_API_VERIFIED" else 0,
-            "browser_session_count": 1 if classification == "BROWSER_SESSION_API" else 0,
-            "dom_only_count": 1 if classification == "DOM_ONLY" else 0,
-            "all_passed": True
+            "direct_api_count": direct_count,
+            "browser_session_count": browser_count,
+            "dom_only_count": dom_count,
+            "hybrid_count": hybrid_count,
+            "all_passed": all_passed
         }
     }
     (output_dir / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
@@ -927,7 +1004,6 @@ def export_skill(args):
     }
     print(json.dumps(result, indent=2))
 
-
 def revalidate_skill(args):
     pkg_dir = Path(args.package_dir).resolve()
     if not pkg_dir.exists() or not pkg_dir.is_dir():
@@ -943,12 +1019,49 @@ def revalidate_skill(args):
     tested_endpoints = []
     overall_status = "HEALTHY"
     all_verified = True
+    SAFE_READ_METHODS = {"GET", "HEAD", "OPTIONS"}
 
     for ep in endpoints:
         ep_path = ep.get("path", "")
         ep_method = ep.get("method", "GET").upper()
-        url = f"{base_url.rstrip('/')}/{ep_path.lstrip('/')}"
+        ep_class = ep.get("classification", "DIRECT_API_VERIFIED")
 
+        # 1. Never replay consequential write methods (POST, PUT, DELETE, PATCH)
+        if ep_method not in SAFE_READ_METHODS:
+            all_verified = False
+            if overall_status == "HEALTHY":
+                overall_status = "SAFE_REVALIDATION_REQUIRED"
+            tested_endpoints.append({
+                "endpoint": sanitize_deep(ep_path),
+                "method": ep_method,
+                "classification": ep_class,
+                "status": "SAFE_REVALIDATION_REQUIRED",
+                "action": "mutation_manual_confirmation",
+                "safe": False,
+                "verified": False,
+                "message": f"Consequential HTTP method '{ep_method}' not replayed automatically. Manual confirmation required."
+            })
+            continue
+
+        # 2. Non-DIRECT_API_VERIFIED classifications require browser session probe
+        if ep_class != "DIRECT_API_VERIFIED":
+            all_verified = False
+            if overall_status in ("HEALTHY", "SAFE_REVALIDATION_REQUIRED"):
+                overall_status = "BROWSER_SESSION_REVALIDATION_REQUIRED"
+            tested_endpoints.append({
+                "endpoint": sanitize_deep(ep_path),
+                "method": ep_method,
+                "classification": ep_class,
+                "status": "BROWSER_SESSION_REVALIDATION_REQUIRED",
+                "action": "browser_session_probe",
+                "safe": True,
+                "verified": False,
+                "message": f"Classification '{ep_class}' requires browser session probe, not direct HTTP."
+            })
+            continue
+
+        # 3. DIRECT_API_VERIFIED + SAFE READ METHOD -> Issue live safe HTTP request
+        url = f"{base_url.rstrip('/')}/{ep_path.lstrip('/')}"
         req_params = {}
         for p_name, p_def in ep.get("parameters", {}).items():
             if isinstance(p_def, dict) and p_def.get("default") is not None and p_def.get("default") != "[REDACTED]":
@@ -989,7 +1102,9 @@ def revalidate_skill(args):
                             break
 
                 tested_endpoints.append({
-                    "endpoint": ep_path,
+                    "endpoint": sanitize_deep(ep_path),
+                    "method": ep_method,
+                    "classification": ep_class,
                     "status": status_code,
                     "verified": ep_ok,
                     "drift": not ep_ok,
@@ -1003,19 +1118,23 @@ def revalidate_skill(args):
             else:
                 overall_status = "DRIFT_DETECTED"
             tested_endpoints.append({
-                "endpoint": ep_path,
+                "endpoint": sanitize_deep(ep_path),
+                "method": ep_method,
+                "classification": ep_class,
                 "status": exc.code,
                 "verified": False,
-                "error": str(exc),
+                "error": sanitize_text(str(exc)),
             })
         except Exception as exc:
             all_verified = False
             overall_status = "RE_EXPLORATION_REQUIRED"
             tested_endpoints.append({
-                "endpoint": ep_path,
+                "endpoint": sanitize_deep(ep_path),
+                "method": ep_method,
+                "classification": ep_class,
                 "status": 0,
                 "verified": False,
-                "error": str(exc),
+                "error": sanitize_text(str(exc)),
             })
 
     result = {
@@ -1023,7 +1142,7 @@ def revalidate_skill(args):
         "verified": all_verified,
         "tested_endpoints": tested_endpoints,
     }
-    print(json.dumps(result, indent=2))
+    print(json.dumps(sanitize_deep(result), indent=2))
 
 
 def build_parser():
@@ -1149,8 +1268,7 @@ def har_inspect(args):
             "graphql": graphql_info,
         })
 
-    print(json.dumps({"count": len(results), "entries": results}, indent=2))
-
+    print(json.dumps(sanitize_deep({"count": len(results), "entries": results}), indent=2))
 
 
 def main():
