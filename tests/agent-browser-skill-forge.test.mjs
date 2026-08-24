@@ -1991,39 +1991,20 @@ describe('agent-browser-skill-forge Issue #14 (Coordinator-Confirmed Blocker Reg
     }
   });
 
-  test('regression: generated client auth discovery stops at workspace root (does not walk into ancestor dirs)', async () => {
-    const http = await import('node:http');
-    const server = http.createServer((req, res) => {
-      const auth = req.headers['authorization'];
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ token_used: auth || 'none' }));
-    });
-
-    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-    const port = server.address().port;
-    const baseUrl = `http://127.0.0.1:${port}`;
-
+  test('regression: generated client auth discovery is based on __file__ location inside .agent-forge boundary, not CWD', async () => {
     const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
     fs.mkdirSync(privateTests, { recursive: true });
-    // Two sibling roots: targetRoot with an auth, ancestorRoot as parent of both
-    const outerRoot = fs.mkdtempSync(path.join(privateTests, 'auth-scope-outer-'));
-    const targetRoot = path.join(outerRoot, 'workspace');
-    fs.mkdirSync(targetRoot, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'auth-file-scope-'));
 
     try {
-      // Write auth ONLY inside targetRoot
-      const targetForge = path.join(targetRoot, '.agent-forge');
-      fs.mkdirSync(targetForge, { recursive: true });
-      fs.writeFileSync(path.join(targetForge, 'auth.json'), JSON.stringify({ token: 'workspace-specific-token' }), 'utf8');
+      // Write auth inside root/.agent-forge (the private workspace boundary)
+      const forgeDir = path.join(root, '.agent-forge');
+      fs.mkdirSync(forgeDir, { recursive: true });
+      fs.writeFileSync(path.join(forgeDir, 'auth.json'), JSON.stringify({ token: 'private-workspace-token' }), 'utf8');
 
-      // Write DIFFERENT auth in the ancestor (outerRoot)
-      const ancestorForge = path.join(outerRoot, '.agent-forge');
-      fs.mkdirSync(ancestorForge, { recursive: true });
-      fs.writeFileSync(path.join(ancestorForge, 'auth.json'), JSON.stringify({ token: 'ancestor-token-must-not-be-used' }), 'utf8');
-
-      const specFile = path.join(targetRoot, 'spec.json');
+      const specFile = path.join(root, 'spec.json');
       fs.writeFileSync(specFile, JSON.stringify({
-        base_url: baseUrl,
+        base_url: 'https://example.com',
         path: '/api/items',
         method: 'GET',
         classification: 'DIRECT_API_VERIFIED',
@@ -2031,54 +2012,57 @@ describe('agent-browser-skill-forge Issue #14 (Coordinator-Confirmed Blocker Reg
 
       const genRaw = runPython([
         'generate-skill',
-        '--root', targetRoot,
-        '--skill-name', 'auth-scope-skill',
+        '--root', root,
+        '--skill-name', 'auth-file-skill',
         '--endpoint-spec', specFile,
       ]);
       const gen = JSON.parse(genRaw);
       const skillDir = gen.output_dir;
+      // client.py is at: root/.agent-forge/output/auth-file-skill/client.py
+      // Walking __file__ ancestors: output/auth-file-skill -> output -> .agent-forge (found!) -> reads auth.json
 
-      // Run client from INSIDE workspace — should pick up workspace-specific-token (not ancestor)
-      const insideWorkdir = path.join(targetRoot, 'nested', 'deep');
-      fs.mkdirSync(insideWorkdir, { recursive: true });
-      const script = `
-import sys, json
-sys.path.insert(0, ${JSON.stringify(skillDir)})
-from client import APIClient
-client = APIClient()
-print(json.dumps({"token": client.auth_token}))
-`;
-      const execRes = await execFileAsync(PYTHON, ['-c', script], {
-        cwd: insideWorkdir,
-        encoding: 'utf8',
-        env: { ...process.env, API_AUTH_TOKEN: '' },
-      });
-      const parsed = JSON.parse(execRes.stdout);
-      assert.equal(parsed.token, 'workspace-specific-token', 'Client must discover workspace auth when run inside workspace');
-      assert.notEqual(parsed.token, 'ancestor-token-must-not-be-used', 'Client must NOT discover ancestor auth');
-
-      // Run client from OUTSIDE workspace (e.g., the outerRoot itself)
-      const outsideWorkdir = path.join(outerRoot, 'some-other-project');
-      fs.mkdirSync(outsideWorkdir, { recursive: true });
-      const scriptOutside = `
+      // 1. Client inside .agent-forge: discovers private-workspace-token regardless of CWD
+      const checkInsideScript = `
 import sys, json
 sys.path.insert(0, ${JSON.stringify(skillDir)})
 from client import APIClient
 client = APIClient()
 print(json.dumps({"token": client.auth_token or "none"}))
 `;
-      const execOutside = await execFileAsync(PYTHON, ['-c', scriptOutside], {
-        cwd: outsideWorkdir,
+      // Run from an UNRELATED cwd (should not matter — auth is based on __file__, not cwd)
+      const unrelatedCwd = os.tmpdir();
+      const insideRes = await execFileAsync(PYTHON, ['-c', checkInsideScript], {
+        cwd: unrelatedCwd,
         encoding: 'utf8',
         env: { ...process.env, API_AUTH_TOKEN: '' },
       });
-      const parsedOutside = JSON.parse(execOutside.stdout);
-      // Outside the workspace: must NOT find workspace auth, must NOT find ancestor auth
-      assert.notEqual(parsedOutside.token, 'workspace-specific-token', 'Exported client run outside workspace must not discover workspace auth');
-      assert.notEqual(parsedOutside.token, 'ancestor-token-must-not-be-used', 'Exported client must not discover ancestor auth from unrelated project');
+      const parsedInside = JSON.parse(insideRes.stdout);
+      assert.equal(parsedInside.token, 'private-workspace-token',
+        'Client inside .agent-forge must discover auth from __file__ boundary regardless of CWD');
+
+      // 2. Exported client (copied outside .agent-forge) must NOT do file auth discovery
+      const exportDir = path.join(root, 'exported-skill');
+      fs.mkdirSync(exportDir, { recursive: true });
+      fs.copyFileSync(path.join(skillDir, 'client.py'), path.join(exportDir, 'client.py'));
+      // exportDir has no .agent-forge ancestor -> no auth file discovery
+
+      const checkExportedScript = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(exportDir)})
+from client import APIClient
+client = APIClient()
+print(json.dumps({"token": client.auth_token or "none"}))
+`;
+      const exportedRes = await execFileAsync(PYTHON, ['-c', checkExportedScript], {
+        cwd: root,  // Even if run from root (which HAS .agent-forge/auth.json), __file__ is outside .agent-forge
+        encoding: 'utf8',
+        env: { ...process.env, API_AUTH_TOKEN: '' },
+      });
+      const parsedExported = JSON.parse(exportedRes.stdout);
+      assert.equal(parsedExported.token, 'none',
+        'Exported client (outside .agent-forge) must not discover file auth — requires explicit token or API_AUTH_TOKEN');
     } finally {
-      server.close();
-      try { fs.rmSync(outerRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
     }
   });
 
@@ -2106,10 +2090,11 @@ print(json.dumps({"token": client.auth_token or "none"}))
       ]);
 
       const timedProv = JSON.parse(fs.readFileSync(path.join(root, '.agent-forge', 'output', 'timed-skill', 'provenance.json'), 'utf8'));
-      assert.ok('exploration_time_s' in timedProv, 'provenance.json must have exploration_time_s field');
-      assert.equal(timedProv.exploration_time_s, 42.5, 'exploration_time_s must record the value from spec');
+      assert.ok('exploration_time' in timedProv, 'provenance.json must have exploration_time field when supplied in spec');
+      assert.equal(timedProv.exploration_time, 42.5, 'exploration_time must record the value from spec evidence');
+      assert.ok(!('exploration_time_s' in timedProv), 'provenance.json must not use exploration_time_s key (normalized to exploration_time)');
 
-      // 2. Without exploration_time_s in spec -> field must still exist but be null
+      // 2. Without exploration_time in spec -> field must be ABSENT from provenance (not invented/null)
       const specNoTime = path.join(root, 'spec-no-time.json');
       fs.writeFileSync(specNoTime, JSON.stringify({
         base_url: 'https://example.com',
@@ -2126,8 +2111,8 @@ print(json.dumps({"token": client.auth_token or "none"}))
       ]);
 
       const untimedProv = JSON.parse(fs.readFileSync(path.join(root, '.agent-forge', 'output', 'untimed-skill', 'provenance.json'), 'utf8'));
-      assert.ok('exploration_time_s' in untimedProv, 'provenance.json must always have exploration_time_s key');
-      assert.equal(untimedProv.exploration_time_s, null, 'exploration_time_s must be null when not provided in spec');
+      assert.ok(!('exploration_time' in untimedProv), 'provenance.json must NOT include exploration_time when not supplied in spec (no invented null)');
+      assert.ok(!('exploration_time_s' in untimedProv), 'provenance.json must NOT include exploration_time_s');
     } finally {
       try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
     }

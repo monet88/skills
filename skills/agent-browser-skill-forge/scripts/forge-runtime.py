@@ -689,8 +689,10 @@ def generate_skill(args):
         ep.get("verification", {}).get("status") == "PASSED" for ep in sanitized_endpoints
     )
 
-    # Exploration time: accept from spec evidence if present, otherwise null.
-    exploration_time_s = spec.get("exploration_time_s")
+    # Exploration time: preserve the exact value from spec evidence if supplied.
+    # Accept either "exploration_time_s" or "exploration_time" from spec (preserve under "exploration_time").
+    # Do NOT invent or default this field — only present when spec explicitly provides it.
+    _et = spec.get("exploration_time") or spec.get("exploration_time_s")
 
     prov_capabilities = []
     for ep in sanitized_endpoints:
@@ -716,7 +718,6 @@ def generate_skill(args):
         "agent_browser_version": get_live_agent_browser_version(root),
         "target_origin": sanitize_url(base_url),
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "exploration_time_s": exploration_time_s,
         "har_sha256": har_hash,
         "capabilities": prov_capabilities,
         "verification_summary": {
@@ -727,6 +728,8 @@ def generate_skill(args):
             "all_passed": all_passed
         }
     }
+    if _et is not None:
+        provenance["exploration_time"] = _et
     (output_dir / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
 
     # 3. Models generation (models.py) when schema is present
@@ -869,8 +872,6 @@ def generate_skill(args):
             cli_args_code = "\n".join(cli_arg_lines)
             cli_call_code = f'    result = client.{primary_ep_id}({", ".join(cli_call_args)})'
 
-        # Embed workspace root for scoped auth discovery (stops walk at generation root)
-        workspace_root_embedded = json.dumps(str(root))
 
         client_code = f'''import argparse
 import json
@@ -882,9 +883,6 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = {json.dumps(base_url)}
-# Auth discovery is scoped to the originating private workspace.
-# Walk upward only within this boundary; do not cross into unrelated ancestor workspaces.
-_FORGE_WORKSPACE_ROOT = Path({workspace_root_embedded})
 
 
 class APIClient:
@@ -895,37 +893,27 @@ class APIClient:
             self._discover_auth()
 
     def _discover_auth(self):
-        """Walk upward from cwd toward _FORGE_WORKSPACE_ROOT looking for auth.json.
-        Stops at _FORGE_WORKSPACE_ROOT so exported clients never discover unrelated ancestor auth."""
-        cur = Path(os.getcwd()).resolve()
-        try:
-            # Check whether cwd is inside the forge workspace; if not, only check cwd.
-            cur.relative_to(_FORGE_WORKSPACE_ROOT)
-            walk_candidates = []
-            p = cur
-            while True:
-                walk_candidates.append(p)
-                if p == _FORGE_WORKSPACE_ROOT:
-                    break
-                parent = p.parent
-                if parent == p:
-                    break
-                p = parent
-        except ValueError:
-            # cwd is outside the originating workspace; only check immediate cwd
-            walk_candidates = [cur]
-
-        for candidate in walk_candidates:
-            auth_file = candidate / ".agent-forge" / "auth.json"
-            if auth_file.exists():
-                try:
-                    auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
-                    token = auth_data.get("token") or auth_data.get("auth_token")
-                    if token:
-                        self.auth_token = token
-                        return
-                except Exception:
-                    pass
+        """Discover auth.json from the private .agent-forge boundary that contains this client file.
+        If this client is inside a .agent-forge ancestor directory, read auth.json from that boundary.
+        If this client is outside any .agent-forge directory (exported/installed), no file discovery
+        is performed — use the API_AUTH_TOKEN environment variable or pass auth_token explicitly."""
+        client_path = Path(__file__).resolve()
+        # Walk ancestors of this client file looking for a directory literally named .agent-forge
+        for ancestor in client_path.parents:
+            if ancestor.name == ".agent-forge":
+                # This client lives inside a .agent-forge boundary; read only that boundary's auth.json
+                auth_file = ancestor / "auth.json"
+                if auth_file.exists():
+                    try:
+                        auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+                        token = auth_data.get("token") or auth_data.get("auth_token")
+                        if token:
+                            self.auth_token = token
+                    except Exception:
+                        pass
+                return  # Found the boundary — stop regardless of whether auth loaded
+        # No .agent-forge ancestor found: client is outside the private workspace (exported/installed).
+        # Do not attempt any file-based auth discovery; require explicit auth_token or API_AUTH_TOKEN.
 
     def _request(self, path, params=None, data=None, method="GET"):
         url = f"{{self.base_url}}/{{path.lstrip('/')}}"
