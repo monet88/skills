@@ -2441,6 +2441,28 @@ print(json.dumps({
       const hybridReport = JSON.parse(hybridReportRaw);
       assert.equal(hybridReport.all_passed, true);
       assert.equal(hybridReport.components.length, 2);
+
+      // 3. Directly evaluate generated DOM extraction script against live fixture DOM
+      const bootstrap = JSON.parse(runPython(['bootstrap', '--root', root, '--task', 'dom-eval']));
+      try {
+        runPython(['exec', '--root', root, '--run-id', bootstrap.run_id, '--', 'open', `${fixture.baseUrl}/catalog`]);
+        runPython(['exec', '--root', root, '--run-id', bootstrap.run_id, '--', 'wait', '--load', 'networkidle']);
+        const scriptFiles = fs.readdirSync(path.join(domDir, 'scripts')).filter(f => f.endsWith('.py'));
+        assert.ok(scriptFiles.length > 0, 'Generated scripts helper must exist');
+        const domScript = path.join(domDir, 'scripts', scriptFiles[0]);
+        const jsCode = execFileSync(PYTHON, [domScript], { encoding: 'utf8' });
+        const b64 = Buffer.from(jsCode, 'utf8').toString('base64');
+        const evalOutRaw = runPython(['exec', '--root', root, '--run-id', bootstrap.run_id, '--', 'eval', '-b', b64]);
+        let evalData = JSON.parse(evalOutRaw);
+        if (typeof evalData === 'string') {
+          evalData = JSON.parse(evalData);
+        }
+        assert.ok(evalData.items && evalData.items.length > 0, 'DOM extraction must return items array');
+        assert.equal(evalData.items[0].title, 'Product 1', 'Title must match Product 1');
+        assert.equal(evalData.items[0].price, '$10', 'Price must match $10');
+      } finally {
+        try { runPython(['exec', '--root', root, '--run-id', bootstrap.run_id, '--', 'close']); } catch {}
+      }
     } finally {
       await fixture.close();
       try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }

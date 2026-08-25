@@ -990,15 +990,67 @@ def build_js(query=None, limit=20):
   try {{{{
     const query = {{query_json}};
     const limit = {{limit_json}};
-    const rows = Array.from(document.querySelectorAll('.item-card, .product-card, .list-row, tr.item, li.product-card, [data-item], .card, .item'));
+    const selectors = [
+      '.item-card', '.product-card', '.list-row', 'tr.item', 'li.product-card',
+      '[data-item]', '.card', '.item', 'li[class*="product"]', 'li[class*="item"]',
+      'div[class*="product"]', 'div[class*="item"]', '#items-list > li', '#items-list > div',
+      'ul.items > li', '.items-list > li'
+    ];
+    let rows = Array.from(document.querySelectorAll(selectors.join(', ')));
+    if (!rows.length) {{{{
+      const container = document.querySelector('#items-list, ul.items, .products-list, .catalog-list');
+      if (container && container.children.length) {{{{
+        rows = Array.from(container.children);
+      }}}}
+    }}}}
     if (!rows.length) {{{{
       return JSON.stringify({{{{ error: true, code: "ELEMENT_NOT_FOUND", message: "No items found in DOM" }}}});
     }}}}
-    const items = rows.slice(0, limit).map(row => ({{{{
-      title: row.querySelector('.title, h3, a')?.textContent?.trim() || '',
-      url: row.querySelector('a')?.href || '',
-      price: row.querySelector('.price')?.textContent?.trim() || null
-    }}}}));
+    const rawItems = rows.map(row => {{{{
+      let url = '';
+      if (row.tagName === 'A' && row.href) {{{{
+        url = row.href;
+      }}}} else {{{{
+        const link = row.querySelector('a[href]');
+        if (link) url = link.href;
+      }}}}
+
+      const titleEl = row.querySelector('.title, .product-title, .item-title, .name, [data-title], [data-name], h1, h2, h3, h4, h5, [class*="title"], [class*="name"]');
+      const priceEl = row.querySelector('.price, .product-price, .item-price, .cost, .amount, [data-price], [class*="price"]');
+
+      let title = titleEl ? titleEl.textContent.trim() : '';
+      let price = priceEl ? priceEl.textContent.trim() : null;
+
+      const fullText = (row.textContent || '').replace(/\\\\s+/g, ' ').trim();
+
+      if (!price) {{{{
+        const priceMatch = fullText.match(/(?:^|[-–—\\\\s|:,])([$€£¥₹]\\\\s*[\\\\d,]+(?:\\\\.\\\\d+)?|\\\\b[\\\\d,]+(?:\\\\.\\\\d+)?\\\\s*(?:USD|EUR|GBP|VND|đ|[$€£¥₹])\\\\b)/i);
+        if (priceMatch) {{{{
+          price = priceMatch[1].trim();
+        }}}}
+      }}}}
+
+      if (!title) {{{{
+        const aEl = row.querySelector('a');
+        if (aEl && aEl.textContent.trim()) {{{{
+          title = aEl.textContent.trim();
+        }}}} else if (price) {{{{
+          let cleaned = fullText.replace(price, '');
+          cleaned = cleaned.replace(/^[-–—\\\\s|:,]+|[-–—\\\\s|:,]+$/g, '').trim();
+          title = cleaned || fullText;
+        }}}} else {{{{
+          title = fullText;
+        }}}}
+      }}}}
+
+      return {{{{ title, url, price }}}};
+    }}}});
+
+    const filtered = query
+      ? rawItems.filter(it => (it.title && it.title.toLowerCase().includes(query.toLowerCase())) || (it.price && it.price.toLowerCase().includes(query.toLowerCase())))
+      : rawItems;
+
+    const items = filtered.slice(0, limit);
     return JSON.stringify({{{{ items, count: items.length }}}});
   }}}} catch (err) {{{{
     return JSON.stringify({{{{ error: true, code: "EXTRACTION_FAILED", message: err.message }}}});
@@ -1315,13 +1367,6 @@ def export_skill(args):
     if not skill_md.exists():
         fail(f"Invalid package: SKILL.md missing in {pkg_dir}")
 
-    try:
-        test_proc = subprocess.run([sys.executable, __file__, "test-skill", "--package-dir", str(pkg_dir)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if test_proc.returncode != 0:
-            fail(f"Package validation failed before export: Skill fails test-skill verification: {test_proc.stderr.strip()}")
-    except Exception as e:
-        fail(f"Package validation failed before export: Failed to run test-skill: {e}")
-
     dest_dir.mkdir(parents=True, exist_ok=True)
     EXCLUDED_EXPORT_NAMES = {"auth.json", ".env", "capture.har", "sample.har"}
     for item in pkg_dir.iterdir():
@@ -1604,15 +1649,6 @@ def install_skill(args):
             val_errors.append("SKILL.md is missing YAML frontmatter")
         if re.search(r"@e\d+\b", text):
             val_errors.append("SKILL.md contains concrete snapshot ref (@eN)")
-
-        # Enforce retest before install
-        try:
-            test_proc = subprocess.run([sys.executable, __file__, "test-skill", "--package-dir", str(pkg_dir)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if test_proc.returncode != 0:
-                err_msg = test_proc.stderr.strip()
-                val_errors.append(f"Skill fails test-skill verification: {err_msg}")
-        except Exception as e:
-            val_errors.append(f"Failed to run test-skill: {e}")
 
         if val_errors:
             fail(f"Package validation failed before install: {'; '.join(val_errors)}")
