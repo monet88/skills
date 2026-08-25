@@ -29,6 +29,11 @@ BLOCKED_STARTUP_FLAGS = {
     "--restore", "--auto-connect", "--cdp", "--engine",
     "--proxy", "--proxy-bypass", "--action-policy", "--allowed-domains",
 }
+COORDINATOR_REGEXES = [
+    r"\bchatgpt\b", r"\bclaude(?:-code)?\b", r"\bcodex\b", r"\bantigravity\b",
+    r"\bagy\b", r"\bopencode\b", r"@agent\b", r"\bsubagent:",
+    r"\bmanage_task\b", r"\bcall_mcp_tool\b"
+]
 
 
 def fail(message, code=2):
@@ -873,14 +878,9 @@ def generate_skill(args):
                     cli_arg_lines.append(f'    parser.add_argument("--{arg_name}", help="{arg_name}")')
                 cli_call_args.append(f"{arg_name}=args.{arg_name}")
             if not cli_arg_lines:
-                # No spec params -> generic fallback
-                cli_arg_lines = [
-                    '    parser.add_argument("--query", "-q", help="Search query")',
-                    '    parser.add_argument("--page", "-p", type=int, default=1, help="Page number")',
-                    '    parser.add_argument("--limit", "-l", type=int, default=20, help="Page size")',
-                ]
-                cli_call_args = ["query=args.query", "page=args.page", "limit=args.limit"]
-            cli_args_code = "\n".join(cli_arg_lines)
+                cli_arg_lines = []
+                cli_call_args = []
+            cli_args_code = "\n".join(cli_arg_lines) if cli_arg_lines else ""
             cli_call_code = f'    result = client.{primary_ep_id}({", ".join(cli_call_args)})'
 
 
@@ -1028,6 +1028,24 @@ if __name__ == "__main__":
     readme_ep_path = readme_primary.get("path", endpoint_path)
     readme_ep_params = readme_primary.get("parameters") or {}
     readme_query_params = {pn: pd for pn, pd in readme_ep_params.items() if isinstance(pd, dict) and pd.get("in") == "query"}
+    skill_md_param_lines = []
+    if readme_query_params:
+        for pn, pd in readme_query_params.items():
+            arg_name = pn.replace("-", "_")
+            ptype = pd.get("type", "string") if isinstance(pd, dict) else "string"
+            if ptype in ("integer", "int"):
+                skill_md_param_lines.append(f'- `--{arg_name} <int>`: {pd.get("description", arg_name)}.')
+            else:
+                skill_md_param_lines.append(f'- `--{arg_name} <string>`: {pd.get("description", arg_name)}.')
+    
+    skill_md_params_block = "\n".join(skill_md_param_lines) if skill_md_param_lines else "No query parameters required."
+    enum_param_rows = []
+    for pn, pd in readme_query_params.items():
+        options = (pd.get("options") or pd.get("enum") or []) if isinstance(pd, dict) else []
+        if options:
+            arg_name = pn.replace("-", "_")
+            enum_param_rows.append(f'| `{arg_name}` | string | declared in verified spec | {", ".join(str(o) for o in options)} |')
+    enum_params_block = "\n".join(enum_param_rows) if enum_param_rows else "No enum parameters are declared in the verified spec for this capability."
 
     if readme_ep_method in ("POST", "PUT", "PATCH"):
         readme_python_example = f'result = client.{readme_ep_id}(data={{"key": "value"}})'
@@ -1039,8 +1057,11 @@ if __name__ == "__main__":
         if readme_query_params:
             first_pn = next(iter(readme_query_params))
             first_arg = first_pn.replace("-", "_")
-            readme_python_example = f'result = client.{readme_ep_id}({first_arg}="example")'
-            readme_cli_example = f'python client.py --{first_arg} "keyword"'
+            first_pd = readme_query_params[first_pn] if isinstance(readme_query_params[first_pn], dict) else {}
+            first_type = first_pd.get("type", "string")
+            first_example = "1" if first_type in ("integer", "int") else "keyword"
+            readme_python_example = f'result = client.{readme_ep_id}({first_arg}={first_example})'
+            readme_cli_example = f'python client.py --{first_arg} {first_example}'
         else:
             readme_python_example = f'result = client.{readme_ep_id}()'
             readme_cli_example = f'python client.py'
@@ -1097,10 +1118,7 @@ python forge-runtime.py revalidate-skill --package-dir .
 `{readme_cli_example}`
 
 Parameters:
-- `--query <string>`: Search keyword or filter.
-- `--page <int>`: Page number (default: 1).
-- `--limit <int>`: Items per page (default: 20).
-- `--category <string>`: Category filter.
+{skill_md_params_block}
 
 Output example:
 ```json
@@ -1172,10 +1190,7 @@ Extract structured item listings from {site_name} with verified parameter variat
 
 ## Enum Parameters
 
-| Parameter | Type | Source & Acquisition Method | Options / Values |
-|---|---|---|---|
-| `category` | string | `[API]` `/api/categories` -> `[item.slug]` | `electronics`, `books`, `apparel` |
-| `status` | string | `[DOM]` `<select id="status">` | `active`, `archived` |
+{enum_params_block}
 
 ## Pagination Parameters
 
@@ -1243,7 +1258,7 @@ def validate_package(args):
             errors.append("SKILL.md contains concrete runtime snapshot ref (@eN)")
 
         # Coordinator-agnostic instruction check
-        for pat in [r"\bchatgpt\b", r"\bclaude(?:-code)?\b", r"\bcodex\b", r"\bantigravity\b", r"\bagy\b", r"\bopencode\b", r"@agent\b", r"\bsubagent:\b", r"\bmanage_task\b", r"\bcall_mcp_tool\b"]:
+        for pat in COORDINATOR_REGEXES:
             if re.search(pat, text, re.IGNORECASE):
                 errors.append(f"SKILL.md contains coordinator-specific syntax matching '{pat}'")
 
@@ -1300,6 +1315,13 @@ def export_skill(args):
     if not skill_md.exists():
         fail(f"Invalid package: SKILL.md missing in {pkg_dir}")
 
+    try:
+        test_proc = subprocess.run([sys.executable, __file__, "test-skill", "--package-dir", str(pkg_dir)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if test_proc.returncode != 0:
+            fail(f"Package validation failed before export: Skill fails test-skill verification: {test_proc.stderr.strip()}")
+    except Exception as e:
+        fail(f"Package validation failed before export: Failed to run test-skill: {e}")
+
     dest_dir.mkdir(parents=True, exist_ok=True)
     EXCLUDED_EXPORT_NAMES = {"auth.json", ".env", "capture.har", "sample.har"}
     for item in pkg_dir.iterdir():
@@ -1350,7 +1372,7 @@ def test_skill(args):
 
     # 1. Check SKILL.md for coordinator-specific syntax
     skill_md_text = skill_md_file.read_text(encoding="utf-8")
-    for pat in [r"\bchatgpt\b", r"\bclaude(?:-code)?\b", r"\bcodex\b", r"\bantigravity\b", r"\bagy\b", r"\bopencode\b", r"@agent\b", r"\bsubagent:\b", r"\bmanage_task\b", r"\bcall_mcp_tool\b"]:
+    for pat in COORDINATOR_REGEXES:
         if re.search(pat, skill_md_text, re.IGNORECASE):
             unclear_instructions.append(f"SKILL.md contains coordinator-specific syntax matching '{pat}'")
             all_passed = False
@@ -1377,7 +1399,7 @@ def test_skill(args):
                 "output_summary": None,
             }
 
-            if ep_class == "DIRECT_API_VERIFIED":
+            if ep_class in ("DIRECT_API_VERIFIED", "HYBRID"):
                 client_path = pkg_dir / "client.py"
                 if not client_path.exists():
                     all_passed = False
@@ -1405,7 +1427,7 @@ try:
         res = client.extract_items()
         print(json.dumps({{"success": True, "data": res}}))
     else:
-        print(json.dumps({{"success": False, "error": f"Method {method_name} not found on APIClient"}}))
+        print(json.dumps({{"success": False, "error": f"Method {{method_name}} not found on APIClient"}}))
 except Exception as e:
     print(json.dumps({{"success": False, "error": str(e)}}))
 """
@@ -1414,8 +1436,12 @@ except Exception as e:
                     if proc.stdout.strip():
                         parsed = json.loads(proc.stdout.strip())
                         if parsed.get("success"):
-                            import_ok = True
                             import_out = parsed.get("data")
+                            if isinstance(import_out, dict) and import_out.get("error") is True:
+                                import_ok = False
+                                import_err = import_out.get("message") or "Returned error envelope"
+                            else:
+                                import_ok = True
                         else:
                             import_err = parsed.get("error")
                     else:
@@ -1438,8 +1464,12 @@ except Exception as e:
                     if cli_proc.stdout.strip():
                         try:
                             parsed_cli = json.loads(cli_proc.stdout.strip())
-                            cli_ok = True
                             cli_out = parsed_cli
+                            if isinstance(cli_out, dict) and cli_out.get("error") is True:
+                                cli_ok = False
+                                cli_err = cli_out.get("message") or "Returned error envelope"
+                            else:
+                                cli_ok = True
                         except Exception:
                             cli_ok = (cli_proc.returncode == 0)
                     elif cli_proc.returncode == 0:
@@ -1468,9 +1498,8 @@ except Exception as e:
                         "count": len(sample_data),
                         "first_item_keys": list(sample_data[0].keys()) if len(sample_data) > 0 and isinstance(sample_data[0], dict) else []
                     }
-                components.append(comp_result)
 
-            elif ep_class in ("DOM_ONLY", "BROWSER_SESSION_API"):
+            if ep_class in ("DOM_ONLY", "BROWSER_SESSION_API", "HYBRID"):
                 script_path = None
                 if (pkg_dir / "scripts").exists():
                     for sc in (pkg_dir / "scripts").glob("*.py"):
@@ -1495,11 +1524,10 @@ except Exception as e:
                     comp_result["status"] = "FAILED"
                     all_passed = False
 
-                components.append(comp_result)
-
-            elif ep_class == "HYBRID":
+            if ep_class == "HYBRID":
                 comp_result["hybrid_check"] = True
-                components.append(comp_result)
+                
+            components.append(comp_result)
 
     elif has_client:
         comp_result = {
@@ -1576,6 +1604,15 @@ def install_skill(args):
             val_errors.append("SKILL.md is missing YAML frontmatter")
         if re.search(r"@e\d+\b", text):
             val_errors.append("SKILL.md contains concrete snapshot ref (@eN)")
+
+        # Enforce retest before install
+        try:
+            test_proc = subprocess.run([sys.executable, __file__, "test-skill", "--package-dir", str(pkg_dir)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if test_proc.returncode != 0:
+                err_msg = test_proc.stderr.strip()
+                val_errors.append(f"Skill fails test-skill verification: {err_msg}")
+        except Exception as e:
+            val_errors.append(f"Failed to run test-skill: {e}")
 
         if val_errors:
             fail(f"Package validation failed before install: {'; '.join(val_errors)}")
