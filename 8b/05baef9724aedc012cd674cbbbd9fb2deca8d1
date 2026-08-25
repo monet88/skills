@@ -1,0 +1,23 @@
+skills/agent-browser-skill-forge/references/output_template.md
+  s_6a9f1c04854135::t_d821dd4c53d069 14,17-18,215,221,235-248,278-283,288,292,302-307
+skills/agent-browser-skill-forge/scripts/forge-runtime.py
+  s_6a9f1c04854135::t_1c2c49ce2ddfa7 2,78,81-97,991-993,1356,1370,1372,1377,1470-1472,1474-1483,1487,1494-1596,1599-1672
+tests/agent-browser-skill-forge.test.mjs
+  s_6a9f1c04854135::t_4383174e0a3967 2230-2288
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "8b05baef9724aedc012cd674cbbbd9fb2deca8d1",
+  "prompts": {},
+  "sessions": {
+    "s_6a9f1c04854135": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fd2cd430dffeWOgs3RQG91HVQu",
+        "model": "unknown"
+      },
+      "human_author": "monet88 <minhthang421992@gmail.com>"
+    }
+  }
+}
