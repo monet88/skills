@@ -1,4 +1,5 @@
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -74,16 +75,26 @@ def clean_env():
     return env
 
 
-def run_process(argv, cwd, *, check=True):
+def run_process(argv, cwd, *, check=True, timeout=None):
     # File-backed capture avoids Windows daemon children keeping PIPE handles open.
     with tempfile.TemporaryFile() as out_file, tempfile.TemporaryFile() as err_file:
-        completed = subprocess.run(
-            argv,
-            cwd=str(cwd),
-            env=clean_env(),
-            stdout=out_file,
-            stderr=err_file,
-        )
+        try:
+            completed = subprocess.run(
+                argv,
+                cwd=str(cwd),
+                env=clean_env(),
+                stdout=out_file,
+                stderr=err_file,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            out_file.seek(0)
+            err_file.seek(0)
+            out = out_file.read().decode("utf-8", errors="replace")
+            err = err_file.read().decode("utf-8", errors="replace")
+            if check:
+                raise RuntimeError(f"Command timed out after {timeout}s: {argv}") from exc
+            return subprocess.CompletedProcess(argv, returncode=124, stdout=out, stderr=err or f"Timeout after {timeout}s")
         out_file.seek(0)
         err_file.seek(0)
         completed.stdout = out_file.read().decode("utf-8", errors="replace")
@@ -977,9 +988,9 @@ def build_js(query=None, limit=20):
     return f"""
 (() => {{{{
   try {{{{
-    const query = {{{{query_json}}}};
-    const limit = {{{{limit_json}}}};
-    const rows = Array.from(document.querySelectorAll('.item-card, .list-row, tr.item'));
+    const query = {{query_json}};
+    const limit = {{limit_json}};
+    const rows = Array.from(document.querySelectorAll('.item-card, .product-card, .list-row, tr.item, li.product-card, [data-item], .card, .item'));
     if (!rows.length) {{{{
       return JSON.stringify({{{{ error: true, code: "ELEMENT_NOT_FOUND", message: "No items found in DOM" }}}});
     }}}}
@@ -1342,7 +1353,7 @@ def revalidate_skill(args):
 
         # 2. Non-DIRECT_API_VERIFIED classifications: attempt live browser DOM probe
         if ep_class != "DIRECT_API_VERIFIED":
-            probe_result = _attempt_browser_dom_probe(base_url, ep_path, ep_class)
+            probe_result = _attempt_browser_dom_probe(base_url, ep_path, ep_class, pkg_dir=pkg_dir, ep=ep)
             if probe_result["verified"]:
                 tested_endpoints.append({
                     "endpoint": sanitize_deep(ep_path),
@@ -1356,13 +1367,14 @@ def revalidate_skill(args):
                 })
             else:
                 all_verified = False
+                probe_status = probe_result.get("status", "BROWSER_SESSION_REVALIDATION_REQUIRED")
                 if overall_status in ("HEALTHY", "SAFE_REVALIDATION_REQUIRED"):
-                    overall_status = "BROWSER_SESSION_REVALIDATION_REQUIRED"
+                    overall_status = probe_status
                 tested_endpoints.append({
                     "endpoint": sanitize_deep(ep_path),
                     "method": ep_method,
                     "classification": ep_class,
-                    "status": "BROWSER_SESSION_REVALIDATION_REQUIRED",
+                    "status": probe_status,
                     "action": "browser_session_probe",
                     "safe": True,
                     "verified": False,
@@ -1455,31 +1467,208 @@ def revalidate_skill(args):
     print(json.dumps(sanitize_deep(result), indent=2))
 
 
-def _attempt_browser_dom_probe(base_url, ep_path, ep_class):
-    """Check browser DOM probe readiness for a non-API endpoint.
-    Returns {"verified": bool, "message": str}.
-    Does NOT launch agent-browser (batch file process trees hang on Windows);
-    instead reports availability and the probe URL for the caller to act on."""
+def _attempt_browser_dom_probe(base_url, ep_path, ep_class, pkg_dir=None, ep=None):
+    """Perform safe live browser/DOM revalidation through the forge trusted agent-browser boundary.
+    Returns {"verified": bool, "status": str, "message": str}."""
     binary = shutil.which("agent-browser.cmd" if os.name == "nt" else "agent-browser") or shutil.which("agent-browser")
-    target_url = f"{base_url.rstrip('/')}/{ep_path.lstrip('/')}"
+    resolved_path = ep_path or ""
+    if ep:
+        params = ep.get("parameters", {})
+        for p_name, p_def in params.items():
+            if isinstance(p_def, dict):
+                p_val = p_def.get("default") or "1"
+                resolved_path = resolved_path.replace(f"{{{p_name}}}", str(p_val))
+    resolved_path = re.sub(r"\{[a-zA-Z0-9_-]+\}", "1", resolved_path)
+    target_url = f"{base_url.rstrip('/')}/{resolved_path.lstrip('/')}" if resolved_path else base_url
+
     if not binary:
         return {
             "verified": False,
+            "status": "BROWSER_SESSION_REVALIDATION_REQUIRED",
             "message": (
                 f"agent-browser not found on PATH; {ep_class} endpoint at {target_url} "
                 "requires a live browser session. Install agent-browser and run: "
                 f"agent-browser open '{target_url}' then eval DOM state to revalidate."
             )
         }
-    # agent-browser is available — report probe readiness without launching a subprocess
-    return {
-        "verified": False,
-        "message": (
-            f"agent-browser found at {binary}. {ep_class} endpoint at {target_url} "
-            "requires a live browser session for revalidation. "
-            f"Run: agent-browser open '{target_url}' then inspect DOM to confirm endpoint health."
-        )
+
+    run_cwd = pkg_dir or Path(os.getcwd())
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir_str:
+        temp_dir = Path(temp_dir_str)
+        config_path = temp_dir / "trusted.agent-browser.json"
+        config_path.write_text(json.dumps({"engine": "chrome", "plugins": []}) + "\n", encoding="utf-8")
+        session_id = f"agent-browser-skill-forge-reval-{uuid.uuid4().hex[:8]}"
+
+        try:
+            open_res = run_process(
+                [binary, "--config", str(config_path), "--session", session_id, "open", target_url],
+                run_cwd,
+                check=False,
+                timeout=15,
+            )
+            if open_res.returncode != 0:
+                err_msg = (open_res.stderr or open_res.stdout or "navigation failed").strip()
+                return {
+                    "verified": False,
+                    "status": "BROWSER_SESSION_REVALIDATION_REQUIRED",
+                    "message": f"Browser navigation to '{target_url}' failed: {err_msg}",
+                }
+
+            run_process(
+                [binary, "--config", str(config_path), "--session", session_id, "wait", "--load", "networkidle"],
+                run_cwd,
+                check=False,
+                timeout=15,
+            )
+
+            # Check if package has a script JS emitter in scripts/
+            script_found = None
+            if pkg_dir and isinstance(pkg_dir, Path) and (pkg_dir / "scripts").exists():
+                ep_id = safe_token(ep.get("id", "")) if ep else ""
+                for candidate in (pkg_dir / "scripts").glob("*.py"):
+                    if ep_id and ep_id in candidate.stem:
+                        script_found = candidate
+                        break
+                if not script_found:
+                    candidates = list((pkg_dir / "scripts").glob("*.py"))
+                    if candidates:
+                        script_found = candidates[0]
+
+            if script_found:
+                js_gen = run_process([sys.executable, str(script_found)], pkg_dir, check=False, timeout=10)
+                if js_gen.returncode == 0 and js_gen.stdout.strip():
+                    js_code = js_gen.stdout.strip()
+                    js_b64 = base64.b64encode(js_code.encode("utf-8")).decode("ascii")
+                    eval_res = run_process(
+                        [binary, "--config", str(config_path), "--session", session_id, "eval", "-b", js_b64],
+                        run_cwd,
+                        check=False,
+                        timeout=15,
+                    )
+                    if eval_res.returncode == 0 and eval_res.stdout.strip():
+                        raw_out = eval_res.stdout.strip()
+                        try:
+                            parsed = json.loads(raw_out)
+                            if isinstance(parsed, str):
+                                parsed = json.loads(parsed)
+                        except Exception:
+                            parsed = None
+
+                        if isinstance(parsed, dict) and not parsed.get("error"):
+                            items = parsed.get("items")
+                            if items is not None and len(items) > 0:
+                                return {
+                                    "verified": True,
+                                    "status": "BROWSER_DOM_VERIFIED",
+                                    "message": f"Browser DOM probe succeeded: {len(items)} items extracted via {script_found.name}.",
+                                }
+                        err_detail = parsed.get("message", "no items found") if isinstance(parsed, dict) else "extraction failed"
+                        return {
+                            "verified": False,
+                            "status": "BROWSER_SESSION_REVALIDATION_REQUIRED",
+                            "message": f"Browser DOM extraction failed: {err_detail}",
+                        }
+
+            # Fallback DOM / Session Health Probe
+            probe_js = """
+(() => {
+  try {
+    const title = document.title || '';
+    const bodyText = (document.body ? document.body.innerText : '') || '';
+    const elementsCount = document.querySelectorAll('*').length;
+
+    let jsonBody = null;
+    try {
+      jsonBody = JSON.parse(bodyText.trim());
+    } catch (e) {}
+
+    if (jsonBody && typeof jsonBody === 'object') {
+      if (jsonBody.error) {
+        return JSON.stringify({ error: true, code: jsonBody.code || "API_ERROR", message: jsonBody.message || "Endpoint returned error JSON" });
+      }
+      return JSON.stringify({ verified: true, title, is_json: true, data_keys: Object.keys(jsonBody) });
     }
+
+    if (/404 not found|page not found/i.test(title) || /404 not found/i.test(bodyText.slice(0, 300))) {
+      return JSON.stringify({ error: true, code: "NOT_FOUND", message: "Page returned 404 Not Found" });
+    }
+    if (/access denied|403 forbidden|unauthorized/i.test(title) || /403 forbidden/i.test(bodyText.slice(0, 300))) {
+      return JSON.stringify({ error: true, code: "FORBIDDEN", message: "Page returned Access Denied / 403 Forbidden" });
+    }
+
+    if (elementsCount < 3 && bodyText.trim().length === 0) {
+      return JSON.stringify({ error: true, message: "Page DOM is empty" });
+    }
+
+    return JSON.stringify({ verified: true, title, body_len: bodyText.trim().length, elements_count: elementsCount });
+  } catch (e) {
+    return JSON.stringify({ error: true, message: e.message });
+  }
+})()
+"""
+            probe_b64 = base64.b64encode(probe_js.strip().encode("utf-8")).decode("ascii")
+            eval_res = run_process(
+                [binary, "--config", str(config_path), "--session", session_id, "eval", "-b", probe_b64],
+                run_cwd,
+                check=False,
+                timeout=15,
+            )
+            if eval_res.returncode == 0 and eval_res.stdout.strip():
+                raw_out = eval_res.stdout.strip()
+                try:
+                    parsed = json.loads(raw_out)
+                    if isinstance(parsed, str):
+                        parsed = json.loads(parsed)
+                except Exception:
+                    parsed = None
+
+                if isinstance(parsed, dict):
+                    if parsed.get("verified"):
+                        return {
+                            "verified": True,
+                            "status": "BROWSER_DOM_VERIFIED",
+                            "message": f"Browser DOM probe succeeded for {target_url} (title: '{parsed.get('title', '')}').",
+                        }
+                    elif parsed.get("code") in ("FORBIDDEN", "AUTH_EXPIRED"):
+                        return {
+                            "verified": False,
+                            "status": "AUTH_EXPIRED",
+                            "message": f"Browser probe failed with auth error: {parsed.get('message')}",
+                        }
+                    elif parsed.get("code") == "NOT_FOUND":
+                        return {
+                            "verified": False,
+                            "status": "RE_EXPLORATION_REQUIRED",
+                            "message": f"Browser probe failed with 404: {parsed.get('message')}",
+                        }
+                    else:
+                        return {
+                            "verified": False,
+                            "status": "BROWSER_SESSION_REVALIDATION_REQUIRED",
+                            "message": f"Browser DOM probe failed: {parsed.get('message', 'probe failed')}",
+                        }
+
+            return {
+                "verified": False,
+                "status": "BROWSER_SESSION_REVALIDATION_REQUIRED",
+                "message": f"Browser evaluation failed: {(eval_res.stderr or eval_res.stdout).strip()}",
+            }
+        except Exception as exc:
+            return {
+                "verified": False,
+                "status": "BROWSER_SESSION_REVALIDATION_REQUIRED",
+                "message": f"Browser DOM probe encountered exception: {exc}",
+            }
+        finally:
+            try:
+                run_process(
+                    [binary, "--config", str(config_path), "--session", session_id, "close"],
+                    run_cwd,
+                    check=False,
+                    timeout=10,
+                )
+            except Exception:
+                pass
 
 
 

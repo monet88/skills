@@ -2227,4 +2227,63 @@ print(json.dumps({"token": client.auth_token or "none"}))
       try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
     }
   });
+
+  test('regression: revalidate-skill performs safe live DOM and browser session revalidation against fixture', async () => {
+    const fixture = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'reval-live-dom-'));
+
+    try {
+      // 1. Generate skill package with DOM_ONLY endpoint pointing to /catalog
+      const specFile = path.join(root, 'browser-reval-spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: fixture.baseUrl,
+        path: '/catalog',
+        method: 'GET',
+        classification: 'DOM_ONLY',
+        site_name: 'Live Catalog Store',
+        site_slug: 'live-catalog-store',
+        capability_slug: 'catalog-items',
+        endpoints: [
+          {
+            id: 'catalog-items',
+            method: 'GET',
+            path: '/catalog',
+            classification: 'DOM_ONLY',
+            verification: { status: 'FALLBACK' },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'live-dom-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const gen = JSON.parse(genRaw);
+      const skillDir = gen.output_dir;
+
+      // 2. Perform live revalidation on the healthy fixture catalog page
+      const revalHealthyRaw = await runPythonAsync(['revalidate-skill', '--package-dir', skillDir, '--base-url', fixture.baseUrl]);
+      const revalHealthy = JSON.parse(revalHealthyRaw);
+      assert.equal(revalHealthy.status, 'HEALTHY', 'Status must be HEALTHY when live DOM probe succeeds');
+      assert.equal(revalHealthy.verified, true, 'Skill must be verified when live browser DOM probe succeeds');
+      assert.equal(revalHealthy.tested_endpoints.length, 1);
+      assert.equal(revalHealthy.tested_endpoints[0].status, 'BROWSER_DOM_VERIFIED');
+      assert.equal(revalHealthy.tested_endpoints[0].verified, true);
+      assert.equal(revalHealthy.tested_endpoints[0].action, 'browser_session_probe');
+      assert.equal(revalHealthy.tested_endpoints[0].safe, true);
+
+      // 3. Perform live revalidation on a 404 endpoint -> detects failure without manual action required first
+      const revalNotFoundRaw = await runPythonAsync(['revalidate-skill', '--package-dir', skillDir, '--base-url', `${fixture.baseUrl}/non-existent-page`]);
+      const revalNotFound = JSON.parse(revalNotFoundRaw);
+      assert.equal(revalNotFound.verified, false, 'Revalidation must fail on non-existent page');
+      assert.equal(revalNotFound.tested_endpoints[0].verified, false);
+    } finally {
+      await fixture.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
 });

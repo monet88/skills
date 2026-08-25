@@ -11,9 +11,11 @@ Each generated capability package must contain a `SKILL.md` entrypoint plus only
 ```text
 .agent-forge/output/<skill-name>/
 ├── SKILL.md
+├── README.md
 ├── endpoint-manifest.json
 ├── provenance.json
-├── client.py                  # Standalone client for DIRECT_API_VERIFIED
+├── client.py                  # Standalone client when any endpoint is DIRECT_API_VERIFIED
+├── models.py                  # Typed data models when schema is observed
 └── scripts/
     └── <feature>.py           # Python JS-emitter for browser-dependent paths
 ```
@@ -210,12 +212,13 @@ When a structural failure occurs, the generated client or script returns:
 
 ## Standalone Python Client Template (`client.py`)
 
-For `DIRECT_API_VERIFIED` capabilities, emit a zero-setup Python client:
+For any package containing at least one `DIRECT_API_VERIFIED` endpoint, emit a zero-setup Python client:
 
 ```python
 import argparse
 import json
 import os
+from pathlib import Path
 import sys
 import urllib.error
 import urllib.parse
@@ -229,13 +232,20 @@ class APIClient:
         self.base_url = base_url.rstrip("/")
         self.auth_token = auth_token or os.environ.get("{AUTH_ENV_VAR}")
         if not self.auth_token:
-            auth_file = Path(os.getcwd()) / ".agent-forge" / "auth.json"
-            if auth_file.exists():
-                try:
-                    auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
-                    self.auth_token = auth_data.get("token") or auth_data.get("auth_token")
-                except Exception:
-                    pass
+            self._discover_auth()
+
+    def _discover_auth(self):
+        client_path = Path(__file__).resolve()
+        for ancestor in client_path.parents:
+            if ancestor.name == ".agent-forge":
+                auth_file = ancestor / "auth.json"
+                if auth_file.exists():
+                    try:
+                        auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+                        self.auth_token = auth_data.get("token") or auth_data.get("auth_token")
+                    except Exception:
+                        pass
+                return
 
     def _request(self, path, params=None, data=None, method="GET"):
         url = f"{self.base_url}/{path.lstrip('/')}"
@@ -265,26 +275,21 @@ class APIClient:
         except Exception as exc:
             return {"error": True, "code": "REQUEST_FAILED", "message": "HTTP request failed due to client connection error"}
 
-    def extract_items(self, query=None, page=1, limit=20, category=None):
-        params = {"q": query, "page": page, "limit": limit, "category": category}
-        return self._request("{endpoint_path}", params=params)
+    def {operation_name}(self, **kwargs):
+        # Render path, query, and body arguments from the verified endpoint manifest.
+        path = "{endpoint_path}"
+        params = {query_params}
+        data = {body_data}
+        return self._request(path, params=params, data=data, method="{http_method}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="{capability_name} standalone client")
-    parser.add_argument("--query", "-q", help="Search query")
-    parser.add_argument("--page", "-p", type=int, default=1, help="Page number")
-    parser.add_argument("--limit", "-l", type=int, default=20, help="Page size")
-    parser.add_argument("--category", "-c", help="Category filter")
+    {cli_argument_definitions}
     args = parser.parse_args()
 
     client = APIClient()
-    result = client.extract_items(
-        query=args.query,
-        page=args.page,
-        limit=args.limit,
-        category=args.category,
-    )
+    result = client.{operation_name}({cli_call_arguments})
     print(json.dumps(result, indent=2))
     if isinstance(result, dict) and result.get("error"):
         sys.exit(1)
@@ -293,6 +298,12 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+
+Generation rules for `client.py`:
+- Emit one method per `DIRECT_API_VERIFIED` endpoint, including direct components inside `HYBRID` packages.
+- Derive method names, HTTP methods, path/query/body parameters, and CLI flags from verified endpoint metadata; do not hard-code a task-specific operation.
+- For explicit endpoint arrays, do not invent an `extract_items` operation. A compatibility alias is allowed only for the intentional flat-spec legacy path.
+- File-based zero-setup auth discovery is allowed only when `client.py` itself is inside a `.agent-forge` ancestor. Exported clients outside that private boundary must use explicit or environment-provided auth.
 
 ---
 
