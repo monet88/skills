@@ -127,10 +127,91 @@ Generated browser-dependent strategy must resolve element refs at runtime. Do no
 
 ## Delivery
 
-1. Validate generated package structure and behavior through its public Skill interface.
-2. Keep accepted output under `.agent-forge/output/<skill-name>/` until export is explicit.
-3. When the user requests installation, install from the accepted private output directory.
-4. When execution intent was part of Phase 1, execute only after the generated capability has passed its required verification.
+After all capabilities are generated, proceed in this order:
+
+### 1. Automated Independent Black-Box Testing
+
+Every generated capability must be tested by an independent test agent or harness that receives only:
+- the generated Skill package directory (under `.agent-forge/output/<skill-name>/` or exported destination);
+- declared runtime prerequisites (Python 3.8+ for direct API; `agent-browser` for browser paths);
+- minimal test cases covering all advertised components.
+
+Forge internals, exploration logs, raw HAR files, and coordinator context are not provided to the independent tester.
+
+#### Sub-Agent Test Execution
+Dispatch testing via an independent sub-agent using this prompt template:
+
+```
+Read {path to generated SKILL.md} as your execution guide.
+
+Test cases:
+{minimal test case list, annotating which advertised atomic/composite component each covers}
+
+Execution requirements:
+- Follow SKILL.md instructions strictly; do not assume unstated coordinator capabilities or private forge internals.
+- For DIRECT_API_VERIFIED: verify by running `client.py` and importing `APIClient` in Python; steady-state testing must not launch agent-browser.
+- For BROWSER_SESSION_API / DOM_ONLY / HYBRID: execute via documented agent-browser commands using only standard shell pipelines.
+- Record specific issues if instructions are unclear, missing, or require coordinator-specific syntax.
+
+Report after execution:
+1. Component results (pass/fail per component)
+2. Failure reasons (if any)
+3. Unclear parts in SKILL.md instructions (if any)
+4. Severe accuracy or performance issues (if any)
+5. Output summary (sanitized; never leak raw credentials or secrets)
+```
+
+#### Test Execution Rules
+- **Component Coverage**: The independent tester must execute each advertised atomic component at least once and execute composite flows end-to-end where applicable.
+- **Steady-State Runtime Independence**: For `DIRECT_API_VERIFIED`, test verification imports/runs the generated `client.py` against the verified endpoint without starting `agent-browser`.
+- **Secret Redaction**: Test reports must sanitize all outputs; credentials and authorization tokens must never appear in test output logs.
+- **No Waiving on Failure**: If a black-box test fails, the generated package files and instructions must be corrected and retested until passing. Do not waive test failures.
+
+### 2. Canonical Skill Installation
+
+Install the generated Skill using the repository's canonical Skill UX:
+
+```bash
+npx skills add ".agent-forge/output/<skill-name>" --agent <agent-name> --copy -y
+```
+
+Or via the runtime helper:
+
+```bash
+python <skill-root>/scripts/forge-runtime.py install-skill --package-dir ".agent-forge/output/<skill-name>" --agent <agent-name>
+```
+
+- **Installation Failure Safety**: If installation fails (e.g. invalid target agent or environment issue), report the error clearly. Installation failure must not delete, mutate, or destroy the accepted private output in `.agent-forge/output/<skill-name>/`.
+
+### 3. Report Results
+
+After black-box tests pass and installation completes, report to the user:
+- Generated Skill name, path, and bundle files.
+- Data coverage: verified fields and endpoints.
+- Coverage gaps: uncollected enum parameters (marked `[collection failed]`), missing non-core fields, or unsupported filters.
+- Test results summary (components verified, pass/fail status).
+
+### 4. Execute on User Task (when Phase 1 had execution intent)
+
+When the original request included execution intent:
+1. Use the installed Skill (or directly execute from the verified private output directory if installation was skipped or failed) to perform the user's task in steady state.
+2. Follow the Skill's documented CLI commands or Python import interface.
+3. Do not re-enter forge exploration unless deterministic revalidation (`revalidate-skill`) fails with unrecoverable schema drift or architectural change.
+
+---
+
+## Coordinator-Agnostic Instruction Contract
+
+Generated runtime instructions in `SKILL.md`, `README.md`, and scripts must remain completely coordinator-agnostic:
+- Assume only standard filesystem + standard shell + Python 3.8+ (and `agent-browser` for browser-dependent paths).
+- Must never require ChatGPT-, Claude-, Codex-, Antigravity-, AGY-, OpenCode-, or other coordinator-specific orchestration syntax (e.g. `@agent`, `Subagent:`, `manage_task`, `call_mcp_tool`, `ask_user_question`).
+- Must be immediately portable and runnable by any independent agent or developer in a standard terminal.
+
+## Experience & Revalidation Notes Lifecycle
+
+- **Read at Reuse**: Experience notes and revalidation guidance in generated `SKILL.md` are read only when executing or maintaining the Skill.
+- **Evidence-Based Updates**: Update notes only when meaningful drift, rate limits, or newly verified endpoint behaviors are observed during real execution.
+- Notes must never be used as a substitute for verifiable execution evidence.
 
 ## Private Workspace Contract
 

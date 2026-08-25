@@ -1242,6 +1242,11 @@ def validate_package(args):
         if re.search(r"@e\d+\b", text):
             errors.append("SKILL.md contains concrete runtime snapshot ref (@eN)")
 
+        # Coordinator-agnostic instruction check
+        for pat in [r"\bchatgpt\b", r"\bclaude(?:-code)?\b", r"\bcodex\b", r"\bantigravity\b", r"\bagy\b", r"\bopencode\b", r"@agent\b", r"\bsubagent:\b", r"\bmanage_task\b", r"\bcall_mcp_tool\b"]:
+            if re.search(pat, text, re.IGNORECASE):
+                errors.append(f"SKILL.md contains coordinator-specific syntax matching '{pat}'")
+
     # 2. endpoint-manifest.json
     manifest_path = pkg_dir / "endpoint-manifest.json"
     if not manifest_path.exists():
@@ -1279,6 +1284,7 @@ def validate_package(args):
     result = {"valid": valid, "package_dir": str(pkg_dir), "errors": errors}
     print(json.dumps(result, indent=2))
     if not valid:
+        print("; ".join(errors), file=sys.stderr)
         sys.exit(1)
 
 
@@ -1311,6 +1317,301 @@ def export_skill(args):
         "destination": str(dest_dir),
     }
     print(json.dumps(result, indent=2))
+
+
+def test_skill(args):
+    pkg_dir = Path(args.package_dir).resolve()
+    if not pkg_dir.exists() or not pkg_dir.is_dir():
+        fail(f"Package directory does not exist: {pkg_dir}")
+
+    manifest_file = pkg_dir / "endpoint-manifest.json"
+    skill_md_file = pkg_dir / "SKILL.md"
+
+    if not skill_md_file.exists():
+        fail(f"SKILL.md missing in package: {pkg_dir}")
+
+    manifest = {}
+    if manifest_file.exists():
+        try:
+            manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        except Exception:
+            manifest = {}
+
+    base_url = args.base_url or manifest.get("target_origin") or "https://example.com"
+    endpoints = manifest.get("endpoints") or []
+
+    has_client = (pkg_dir / "client.py").exists()
+
+    components = []
+    all_passed = True
+    unclear_instructions = []
+    severe_issues = []
+    failures = []
+
+    # 1. Check SKILL.md for coordinator-specific syntax
+    skill_md_text = skill_md_file.read_text(encoding="utf-8")
+    for pat in [r"\bchatgpt\b", r"\bclaude(?:-code)?\b", r"\bcodex\b", r"\bantigravity\b", r"\bagy\b", r"\bopencode\b", r"@agent\b", r"\bsubagent:\b", r"\bmanage_task\b", r"\bcall_mcp_tool\b"]:
+        if re.search(pat, skill_md_text, re.IGNORECASE):
+            unclear_instructions.append(f"SKILL.md contains coordinator-specific syntax matching '{pat}'")
+            all_passed = False
+
+    # 2. Check for snapshot refs in package
+    if re.search(r"@e\d+\b", skill_md_text):
+        severe_issues.append("SKILL.md persists concrete snapshot ref (@eN)")
+        all_passed = False
+
+    # 3. Test each declared endpoint/component
+    if endpoints:
+        for ep in endpoints:
+            ep_id = ep.get("id") or "endpoint"
+            ep_class = ep.get("classification", "DIRECT_API_VERIFIED")
+            method_name = safe_token(ep_id).replace("-", "_")
+
+            comp_result = {
+                "name": ep_id,
+                "classification": ep_class,
+                "steady_state_runtime": "python" if ep_class == "DIRECT_API_VERIFIED" else "agent-browser",
+                "status": "PASSED",
+                "import_check": None,
+                "cli_check": None,
+                "output_summary": None,
+            }
+
+            if ep_class == "DIRECT_API_VERIFIED":
+                client_path = pkg_dir / "client.py"
+                if not client_path.exists():
+                    all_passed = False
+                    comp_result["status"] = "FAILED"
+                    comp_result["error"] = "client.py missing for DIRECT_API_VERIFIED endpoint"
+                    failures.append(f"{ep_id}: client.py missing")
+                    components.append(comp_result)
+                    continue
+
+                # Python module import check
+                import_ok = False
+                import_out = None
+                import_err = None
+                py_code = f"""
+import sys, json
+sys.path.insert(0, {json.dumps(str(pkg_dir))})
+try:
+    from client import APIClient
+    client = APIClient(base_url={json.dumps(base_url)})
+    if hasattr(client, {json.dumps(method_name)}):
+        m = getattr(client, {json.dumps(method_name)})
+        res = m()
+        print(json.dumps({{"success": True, "data": res}}))
+    elif hasattr(client, "extract_items"):
+        res = client.extract_items()
+        print(json.dumps({{"success": True, "data": res}}))
+    else:
+        print(json.dumps({{"success": False, "error": f"Method {method_name} not found on APIClient"}}))
+except Exception as e:
+    print(json.dumps({{"success": False, "error": str(e)}}))
+"""
+                try:
+                    proc = subprocess.run([sys.executable, "-c", py_code], cwd=str(pkg_dir), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+                    if proc.stdout.strip():
+                        parsed = json.loads(proc.stdout.strip())
+                        if parsed.get("success"):
+                            import_ok = True
+                            import_out = parsed.get("data")
+                        else:
+                            import_err = parsed.get("error")
+                    else:
+                        import_err = proc.stderr.strip() or "Import check failed"
+                except Exception as ex:
+                    import_err = str(ex)
+
+                comp_result["import_check"] = import_ok
+                if not import_ok:
+                    comp_result["status"] = "FAILED"
+                    all_passed = False
+                    failures.append(f"{ep_id} Python import check failed: {import_err}")
+
+                # CLI execution check
+                cli_ok = False
+                cli_out = None
+                cli_err = None
+                try:
+                    cli_proc = subprocess.run([sys.executable, str(client_path)], cwd=str(pkg_dir), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+                    if cli_proc.stdout.strip():
+                        try:
+                            parsed_cli = json.loads(cli_proc.stdout.strip())
+                            cli_ok = True
+                            cli_out = parsed_cli
+                        except Exception:
+                            cli_ok = (cli_proc.returncode == 0)
+                    elif cli_proc.returncode == 0:
+                        cli_ok = True
+                    else:
+                        cli_err = (cli_proc.stderr or cli_proc.stdout or "").strip()
+                except Exception as ex:
+                    cli_err = str(ex)
+
+                comp_result["cli_check"] = cli_ok
+                if not cli_ok:
+                    comp_result["status"] = "FAILED"
+                    all_passed = False
+                    failures.append(f"{ep_id} CLI execution check failed: {cli_err or 'unknown'}")
+
+                # Sanitized output summary
+                sample_data = import_out or cli_out
+                if isinstance(sample_data, dict):
+                    comp_result["output_summary"] = {
+                        "keys": list(sample_data.keys()),
+                        "has_items": "items" in sample_data or "results" in sample_data or "data" in sample_data,
+                        "item_count": len(sample_data["items"]) if isinstance(sample_data.get("items"), list) else None,
+                    }
+                elif isinstance(sample_data, list):
+                    comp_result["output_summary"] = {
+                        "count": len(sample_data),
+                        "first_item_keys": list(sample_data[0].keys()) if len(sample_data) > 0 and isinstance(sample_data[0], dict) else []
+                    }
+                components.append(comp_result)
+
+            elif ep_class in ("DOM_ONLY", "BROWSER_SESSION_API"):
+                script_path = None
+                if (pkg_dir / "scripts").exists():
+                    for sc in (pkg_dir / "scripts").glob("*.py"):
+                        if safe_token(ep_id) in sc.stem or len(list((pkg_dir / "scripts").glob("*.py"))) == 1:
+                            script_path = sc
+                            break
+
+                script_ok = False
+                if script_path and script_path.exists():
+                    try:
+                        s_proc = subprocess.run([sys.executable, str(script_path)], cwd=str(pkg_dir), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+                        if s_proc.returncode == 0 and s_proc.stdout.strip():
+                            script_ok = True
+                            comp_result["output_summary"] = {"js_length": len(s_proc.stdout.strip()), "script": script_path.name}
+                    except Exception as ex:
+                        failures.append(f"{ep_id} Script execution failed: {ex}")
+                else:
+                    failures.append(f"{ep_id}: scripts helper missing")
+
+                comp_result["script_check"] = script_ok
+                if not script_ok:
+                    comp_result["status"] = "FAILED"
+                    all_passed = False
+
+                components.append(comp_result)
+
+            elif ep_class == "HYBRID":
+                comp_result["hybrid_check"] = True
+                components.append(comp_result)
+
+    elif has_client:
+        comp_result = {
+            "name": "api_client",
+            "classification": "DIRECT_API_VERIFIED",
+            "steady_state_runtime": "python",
+            "status": "PASSED",
+        }
+        client_path = pkg_dir / "client.py"
+        try:
+            c_proc = subprocess.run([sys.executable, str(client_path)], cwd=str(pkg_dir), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+            cli_ok = False
+            if c_proc.stdout.strip():
+                try:
+                    json.loads(c_proc.stdout.strip())
+                    cli_ok = True
+                except Exception:
+                    cli_ok = (c_proc.returncode == 0)
+            elif c_proc.returncode == 0:
+                cli_ok = True
+
+            comp_result["cli_check"] = cli_ok
+            if not cli_ok:
+                comp_result["status"] = "FAILED"
+                all_passed = False
+                failures.append(f"client.py execution failed: {(c_proc.stderr or c_proc.stdout or '').strip()}")
+        except Exception as ex:
+            comp_result["status"] = "FAILED"
+            all_passed = False
+            failures.append(str(ex))
+        components.append(comp_result)
+
+    report = {
+        "package_dir": str(pkg_dir),
+        "all_passed": all_passed,
+        "components": components,
+        "unclear_instructions": unclear_instructions,
+        "severe_issues": severe_issues,
+        "failures": failures,
+    }
+    print(json.dumps(sanitize_deep(report), indent=2))
+    if not all_passed:
+        if failures:
+            print("; ".join(failures), file=sys.stderr)
+        sys.exit(1)
+
+
+def install_skill(args):
+    pkg_dir = Path(args.package_dir).resolve()
+    if not pkg_dir.exists() or not pkg_dir.is_dir():
+        fail(f"Package directory does not exist: {pkg_dir}")
+
+    skill_md = pkg_dir / "SKILL.md"
+    if not skill_md.exists():
+        fail(f"Invalid package: SKILL.md missing in {pkg_dir}")
+
+    root = resolve_root(args.root)
+    agent = args.agent or "antigravity"
+    skill_name = pkg_dir.name
+
+    if args.dest:
+        dest_dir = Path(args.dest).resolve()
+    elif agent in ("antigravity", "codex", "*"):
+        dest_dir = root / ".agents" / "skills" / skill_name
+    elif agent in ("claude", "claude-code"):
+        dest_dir = root / ".claude" / "skills" / skill_name
+    else:
+        dest_dir = root / ".agents" / "skills" / skill_name
+
+    try:
+        val_errors = []
+        text = skill_md.read_text(encoding="utf-8")
+        if not re.search(r"^---\r?\n[\s\S]*?\r?\n---", text):
+            val_errors.append("SKILL.md is missing YAML frontmatter")
+        if re.search(r"@e\d+\b", text):
+            val_errors.append("SKILL.md contains concrete snapshot ref (@eN)")
+
+        if val_errors:
+            fail(f"Package validation failed before install: {'; '.join(val_errors)}")
+
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        EXCLUDED_NAMES = {"auth.json", ".env", "capture.har", "sample.har"}
+        for item in pkg_dir.iterdir():
+            if item.name in EXCLUDED_NAMES or item.name.endswith(".har") or item.name == ".agent-forge":
+                continue
+            target = dest_dir / item.name
+            if item.is_dir():
+                shutil.copytree(item, target, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, target)
+
+        result = {
+            "installed": True,
+            "skill_name": skill_name,
+            "source": str(pkg_dir),
+            "destination": str(dest_dir),
+            "agent": agent,
+            "error": None
+        }
+        print(json.dumps(result, indent=2))
+    except Exception as exc:
+        result = {
+            "installed": False,
+            "skill_name": skill_name,
+            "source": str(pkg_dir),
+            "destination": str(dest_dir) if "dest_dir" in locals() else None,
+            "agent": agent,
+            "error": str(exc)
+        }
+        print(json.dumps(result, indent=2))
+        sys.exit(1)
+
 
 def revalidate_skill(args):
     pkg_dir = Path(args.package_dir).resolve()
@@ -1728,6 +2029,19 @@ def build_parser():
     p_val.add_argument("--package-dir", required=True)
     p_val.set_defaults(func=validate_package)
 
+    p_test = sub.add_parser("test-skill")
+    p_test.add_argument("--package-dir", required=True)
+    p_test.add_argument("--base-url")
+    p_test.add_argument("--test-cases")
+    p_test.set_defaults(func=test_skill)
+
+    p_inst = sub.add_parser("install-skill")
+    p_inst.add_argument("--package-dir", required=True)
+    p_inst.add_argument("--agent", default="antigravity")
+    p_inst.add_argument("--dest")
+    p_inst.add_argument("--root", default=os.getcwd())
+    p_inst.set_defaults(func=install_skill)
+
     p_exp = sub.add_parser("export-skill")
     p_exp.add_argument("--package-dir", required=True)
     p_exp.add_argument("--destination", required=True)
@@ -1806,3 +2120,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

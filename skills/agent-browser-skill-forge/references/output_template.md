@@ -414,3 +414,74 @@ if __name__ == "__main__":
   }
 }
 ```
+
+---
+
+## Delivery & Black-Box Testing Specification
+
+### 1. Independent Sub-Agent Tester Protocol
+
+Independent testing runs in an isolated sub-agent or harness session. The tester receives ONLY:
+1. The path to the generated Skill package (`.agent-forge/output/<skill-name>/` or exported destination).
+2. Declared environment prerequisites (Python 3.8+ / `agent-browser`).
+3. Minimal test cases covering all advertised components.
+
+Forge internal state (e.g. `runtime.json`, `.agent-forge/runs/`, raw HAR files) and coordinator history are withheld.
+
+### 2. Standardized Sub-Agent Prompt
+
+```text
+Read {path_to_skill_package}/SKILL.md as your execution guide.
+
+Test cases:
+{test_cases_json_or_list}
+
+Execution requirements:
+- Follow SKILL.md instructions strictly; do not assume coordinator-specific capabilities.
+- For DIRECT_API_VERIFIED: verify by executing `client.py` and importing `APIClient` in Python; steady-state testing must not start agent-browser.
+- For BROWSER_SESSION_API / DOM_ONLY: execute via documented agent-browser commands using only standard shell pipelines.
+- Record specific issues if instructions are unclear or missing.
+
+Report after execution:
+1. Component results (pass/fail per component)
+2. Failure reasons (if any)
+3. Unclear parts in SKILL.md instructions (if any)
+4. Severe accuracy or performance issues (if any)
+5. Output summary (sanitized; never leak raw secrets)
+```
+
+### 3. Structured Test Report Schema
+
+```json
+{
+  "package_dir": ".agent-forge/output/example-skill",
+  "all_passed": true,
+  "components": [
+    {
+      "name": "list_items",
+      "classification": "DIRECT_API_VERIFIED",
+      "steady_state_runtime": "python",
+      "status": "PASSED",
+      "import_check": true,
+      "cli_check": true,
+      "output_summary": {
+        "item_count": 5,
+        "sample_keys": ["id", "title", "price"]
+      }
+    }
+  ],
+  "unclear_instructions": [],
+  "severe_issues": [],
+  "failures": []
+}
+```
+
+### 4. Canonical Installation UX
+
+```bash
+# Project-level skill installation
+npx skills add ".agent-forge/output/<skill-name>" --agent <agent-name> --copy -y
+```
+
+Installation failure must be reported clearly and must never delete or corrupt the accepted package in `.agent-forge/output/<skill-name>/`.
+

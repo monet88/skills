@@ -20,5 +20,11 @@ build/
 .tmp/
 tmp/
 
+# Local agent installs and locks
+.agents/
+.claude/
+skills-lock.json
+
 # agent-browser-skill-forge private workspace
 .agent-forge/
+

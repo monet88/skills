@@ -2287,3 +2287,433 @@ print(json.dumps({"token": client.auth_token or "none"}))
     }
   });
 });
+
+describe('agent-browser-skill-forge Issue #15 (Delivery, Installation, & Black-Box Execution)', () => {
+  let fixture;
+
+  test('black-box testing executes DIRECT_API_VERIFIED capability via Python client without launching agent-browser', async () => {
+    fixture = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'blackbox-direct-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: fixture.baseUrl,
+        path: '/api/items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Catalog Store',
+        site_slug: 'catalog-store',
+        capability_slug: 'extract-items',
+        endpoints: [
+          {
+            id: 'extract-items',
+            method: 'GET',
+            path: '/api/items',
+            classification: 'DIRECT_API_VERIFIED',
+            parameters: {
+              page: { type: 'integer', in: 'query', name: 'page', default: 1 },
+              limit: { type: 'integer', in: 'query', name: 'limit', default: 5 },
+            },
+            verification: { status: 'PASSED', tested_variations: [{ params: { page: 1 }, status: 200 }] },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'catalog-items-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const gen = JSON.parse(genRaw);
+      const skillDir = gen.output_dir;
+
+      // 1. Independent Black-Box test runner (receives only package dir and base_url)
+      const testReportRaw = await runPythonAsync(['test-skill', '--package-dir', skillDir, '--base-url', fixture.baseUrl]);
+      const testReport = JSON.parse(testReportRaw);
+
+      assert.equal(testReport.all_passed, true, 'All black-box tests must pass');
+      assert.equal(testReport.components.length, 1);
+      assert.equal(testReport.components[0].name, 'extract-items');
+      assert.equal(testReport.components[0].classification, 'DIRECT_API_VERIFIED');
+      assert.equal(testReport.components[0].steady_state_runtime, 'python');
+      assert.equal(testReport.components[0].import_check, true, 'Module import check must pass');
+      assert.equal(testReport.components[0].cli_check, true, 'CLI execution check must pass');
+      assert.ok(testReport.components[0].output_summary);
+
+      // 2. Black-box agent directly imports APIClient and executes queries
+      const blackboxScript = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(skillDir)})
+from client import APIClient
+
+client = APIClient(base_url=${JSON.stringify(fixture.baseUrl)})
+# Verify atomic component
+res_p1 = client.extract_items(page=1, limit=3)
+res_p2 = client.extract_items(page=2, limit=3)
+
+print(json.dumps({
+    "p1_count": len(res_p1.get("items", [])),
+    "p2_count": len(res_p2.get("items", [])),
+    "p1_first_id": res_p1["items"][0]["id"] if res_p1.get("items") else None,
+    "p2_first_id": res_p2["items"][0]["id"] if res_p2.get("items") else None,
+}))
+`;
+      const execRes = await execFileAsync(PYTHON, ['-c', blackboxScript], { encoding: 'utf8' });
+      const parsedExec = JSON.parse(execRes.stdout);
+      assert.equal(parsedExec.p1_count, 3);
+      assert.equal(parsedExec.p2_count, 3);
+      assert.notEqual(parsedExec.p1_first_id, parsedExec.p2_first_id, 'Pagination must return distinct records across pages');
+    } finally {
+      await fixture.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('black-box testing executes DOM_ONLY and HYBRID generated paths through documented prerequisites', async () => {
+    fixture = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'blackbox-hybrid-'));
+
+    try {
+      // 1. Generate DOM_ONLY capability
+      const domSpec = path.join(root, 'dom-spec.json');
+      fs.writeFileSync(domSpec, JSON.stringify({
+        base_url: fixture.baseUrl,
+        path: '/catalog',
+        classification: 'DOM_ONLY',
+        site_name: 'DOM Store',
+        endpoints: [
+          { id: 'extract-dom', method: 'GET', path: '/catalog', classification: 'DOM_ONLY' },
+        ],
+      }), 'utf8');
+
+      const genDomRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'dom-skill',
+        '--endpoint-spec', domSpec,
+      ]);
+      const domDir = JSON.parse(genDomRaw).output_dir;
+
+      const domReportRaw = await runPythonAsync(['test-skill', '--package-dir', domDir, '--base-url', fixture.baseUrl]);
+      const domReport = JSON.parse(domReportRaw);
+      assert.equal(domReport.all_passed, true);
+      assert.equal(domReport.components[0].classification, 'DOM_ONLY');
+      assert.equal(domReport.components[0].script_check, true);
+
+      // 2. Generate HYBRID capability pointing to verified fixture endpoints
+      const hybridSpec = path.join(root, 'hybrid-spec.json');
+      fs.writeFileSync(hybridSpec, JSON.stringify({
+        base_url: fixture.baseUrl,
+        classification: 'HYBRID',
+        site_name: 'Hybrid Store',
+        endpoints: [
+          {
+            id: 'api-feed',
+            method: 'GET',
+            path: '/api/items',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: { status: 'PASSED', tested_variations: [{ params: {}, status: 200 }] },
+          },
+          {
+            id: 'dom-feed',
+            method: 'GET',
+            path: '/catalog',
+            classification: 'DOM_ONLY',
+          },
+        ],
+      }), 'utf8');
+
+      const genHybridRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'hybrid-test-skill',
+        '--endpoint-spec', hybridSpec,
+      ]);
+      const hybridDir = JSON.parse(genHybridRaw).output_dir;
+
+      const hybridReportRaw = await runPythonAsync(['test-skill', '--package-dir', hybridDir, '--base-url', fixture.baseUrl]);
+      const hybridReport = JSON.parse(hybridReportRaw);
+      assert.equal(hybridReport.all_passed, true);
+      assert.equal(hybridReport.components.length, 2);
+    } finally {
+      await fixture.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('test reports record component outcomes, failure reasons, and redact secret credentials', async () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'report-redact-'));
+
+    try {
+      const secretToken = 'secret_access_jwt_token_44444';
+      const specFile = path.join(root, 'spec-secrets.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: 'https://secure.example.com',
+        path: '/api/v1/secure',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        headers: { Authorization: `Bearer ${secretToken}` },
+        parameters: { token: { type: 'string', in: 'query', name: 'token', default: secretToken } },
+        endpoints: [
+          {
+            id: 'get-secure-items',
+            method: 'GET',
+            path: '/api/v1/secure',
+            classification: 'DIRECT_API_VERIFIED',
+            parameters: { token: { type: 'string', in: 'query', name: 'token', default: secretToken } },
+            verification: { status: 'PASSED', tested_variations: [{ params: {}, status: 200 }] },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'secure-report-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const skillDir = JSON.parse(genRaw).output_dir;
+
+      let reportRaw = '';
+      try {
+        reportRaw = await runPythonAsync(['test-skill', '--package-dir', skillDir]);
+      } catch (err) {
+        reportRaw = (err.stdout || err.stderr || '').toString();
+      }
+
+      assert.doesNotMatch(reportRaw, new RegExp(secretToken), 'Test report must not leak secret token');
+      const report = JSON.parse(reportRaw);
+      assert.ok('components' in report, 'Report must contain components array');
+      assert.equal(report.components[0].name, 'get-secure-items');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('failed black-box test causes diagnostic error reporting and package correction loop', async () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'fail-correct-'));
+
+    try {
+      const brokenPkg = path.join(root, 'broken-skill');
+      fs.mkdirSync(brokenPkg, { recursive: true });
+      fs.writeFileSync(path.join(brokenPkg, 'SKILL.md'), '---\nname: broken-skill\n---\n# Broken Skill\nClassification: `DIRECT_API_VERIFIED`', 'utf8');
+      fs.writeFileSync(path.join(brokenPkg, 'endpoint-manifest.json'), JSON.stringify({
+        endpoints: [{ id: 'missing-method', classification: 'DIRECT_API_VERIFIED' }],
+      }), 'utf8');
+      fs.writeFileSync(path.join(brokenPkg, 'provenance.json'), JSON.stringify({ har_sha256: 'abc' }), 'utf8');
+      // client.py has a syntax error
+      fs.writeFileSync(path.join(brokenPkg, 'client.py'), 'def syntax_error(', 'utf8');
+
+      // 1. Black-box test must fail with non-zero exit code
+      let testFailed = false;
+      let failOutput = '';
+      try {
+        await runPythonAsync(['test-skill', '--package-dir', brokenPkg]);
+      } catch (err) {
+        testFailed = true;
+        failOutput = (err.stdout || err.stderr || '').toString();
+      }
+      assert.ok(testFailed, 'test-skill must fail on broken client');
+      assert.match(failOutput, /failures|status.*FAILED|SyntaxError/i);
+
+      // 2. Correct the package (repair client.py)
+      fs.writeFileSync(path.join(brokenPkg, 'client.py'), `
+class APIClient:
+    def __init__(self, base_url="https://example.com"): self.base_url = base_url
+    def missing_method(self): return {"success": True, "items": []}
+if __name__ == "__main__":
+    print('{"success": true, "items": []}')
+`, 'utf8');
+
+      // 3. Retest must now pass
+      const passedRaw = await runPythonAsync(['test-skill', '--package-dir', brokenPkg]);
+      const passedReport = JSON.parse(passedRaw);
+      assert.equal(passedReport.all_passed, true, 'Retest after correction must succeed');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('generated skill installs via canonical UX and installation failure preserves private output intact', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'install-test-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: 'https://example.com',
+        path: '/api/goods',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Install Shop',
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'install-shop-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const gen = JSON.parse(genRaw);
+      const outputDir = gen.output_dir;
+
+      assert.ok(fs.existsSync(path.join(outputDir, 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(outputDir, 'client.py')));
+
+      // 1. Install via install-skill into mock agent env
+      const installRaw = runPython([
+        'install-skill',
+        '--package-dir', outputDir,
+        '--agent', 'antigravity',
+        '--root', root,
+      ]);
+      const installRes = JSON.parse(installRaw);
+      assert.equal(installRes.installed, true);
+      assert.equal(installRes.agent, 'antigravity');
+      assert.ok(fs.existsSync(path.join(root, '.agents', 'skills', 'install-shop-skill', 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(root, '.agents', 'skills', 'install-shop-skill', 'client.py')));
+
+      // 2. Verify source directory in .agent-forge/output is still completely intact
+      assert.ok(fs.existsSync(path.join(outputDir, 'SKILL.md')), 'Source SKILL.md must remain intact after install');
+      assert.ok(fs.existsSync(path.join(outputDir, 'client.py')), 'Source client.py must remain intact after install');
+
+      // 3. Failed install scenario (e.g. invalid package): preserves outputDir
+      const badPkg = path.join(root, '.agent-forge', 'output', 'bad-pkg');
+      fs.mkdirSync(badPkg, { recursive: true });
+      fs.writeFileSync(path.join(badPkg, 'some-file.txt'), 'content', 'utf8'); // missing SKILL.md
+
+      let installFailed = false;
+      try {
+        runPython(['install-skill', '--package-dir', badPkg, '--root', root]);
+      } catch {
+        installFailed = true;
+      }
+      assert.ok(installFailed, 'install-skill must fail on invalid package');
+      assert.ok(fs.existsSync(badPkg), 'Source folder must not be deleted on install failure');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('coordinator-agnostic validation rejects coordinator-specific orchestration syntax', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'coord-syntax-'));
+
+    try {
+      const coordSkillDir = path.join(root, 'coord-skill');
+      fs.mkdirSync(coordSkillDir, { recursive: true });
+      fs.writeFileSync(path.join(coordSkillDir, 'endpoint-manifest.json'), JSON.stringify({ endpoints: [] }), 'utf8');
+      fs.writeFileSync(path.join(coordSkillDir, 'provenance.json'), JSON.stringify({ har_sha256: 'abc' }), 'utf8');
+
+      // Case A: SKILL.md with Claude/ChatGPT/AGY orchestration syntax
+      fs.writeFileSync(path.join(coordSkillDir, 'SKILL.md'), `---
+name: coord-skill
+description: "Test skill"
+---
+# Coord Skill
+Classification: \`DIRECT_API_VERIFIED\`
+Tell Claude to dispatch a Subagent: to run manage_task.
+`, 'utf8');
+
+      let valFailed = false;
+      let valOut = '';
+      try {
+        runPython(['validate-package', '--package-dir', coordSkillDir]);
+      } catch (err) {
+        valFailed = true;
+        valOut = (err.stdout || err.stderr || '').toString();
+      }
+      assert.ok(valFailed, 'validate-package must fail on coordinator-specific syntax');
+      assert.match(valOut, /coordinator-specific syntax/i);
+
+      // Case B: Clean SKILL.md with standard shell/Python instructions passes
+      fs.writeFileSync(path.join(coordSkillDir, 'SKILL.md'), `---
+name: coord-skill
+description: "Test skill"
+---
+# Coord Skill
+Classification: \`DIRECT_API_VERIFIED\`
+Execute \`python client.py --query "test"\` from shell.
+`, 'utf8');
+
+      const valRaw = runPython(['validate-package', '--package-dir', coordSkillDir]);
+      const val = JSON.parse(valRaw);
+      assert.equal(val.valid, true, 'Clean coordinator-agnostic skill must pass validation');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('execution intent follow-through executes user task using installed skill in steady state without re-entering forge', async () => {
+    fixture = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'exec-intent-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: fixture.baseUrl,
+        path: '/api/items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Catalog Store',
+        endpoints: [
+          {
+            id: 'list-items',
+            method: 'GET',
+            path: '/api/items',
+            classification: 'DIRECT_API_VERIFIED',
+            parameters: {
+              query: { type: 'string', in: 'query', name: 'q' },
+            },
+            verification: { status: 'PASSED', tested_variations: [{ params: { q: 'Sensor' }, status: 200 }] },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'exec-intent-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const skillDir = JSON.parse(genRaw).output_dir;
+
+      // 1. Install skill
+      runPython(['install-skill', '--package-dir', skillDir, '--agent', 'antigravity', '--root', root]);
+      const installedDir = path.join(root, '.agents', 'skills', 'exec-intent-skill');
+
+      // 2. Perform user original task (e.g. search for "Product 12") in steady-state
+      const userTaskScript = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(installedDir)})
+from client import APIClient
+
+client = APIClient(base_url=${JSON.stringify(fixture.baseUrl)})
+result = client.list_items(query="Product 12")
+print(json.dumps(result))
+`;
+      const taskExec = await execFileAsync(PYTHON, ['-c', userTaskScript], { encoding: 'utf8' });
+      const taskResult = JSON.parse(taskExec.stdout);
+      assert.equal(taskResult.items.length, 1);
+      assert.equal(taskResult.items[0].title, 'Product 12');
+    } finally {
+      await fixture.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+});
+
+
