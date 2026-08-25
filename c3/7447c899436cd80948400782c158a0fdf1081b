@@ -1,0 +1,42 @@
+skills/agent-browser-skill-forge/SKILL.md
+  s_77a2a5f241d64b::t_24e715e063cfb0 130-214
+skills/agent-browser-skill-forge/scripts/forge-runtime.py
+  s_d0eca32076ef2e::t_7522f598585df7 1287,1321-1546
+  s_d0eca32076ef2e::t_3dd7ba395c7e0d 1245-1249,1547-1615,2032-2044,2123
+tests/agent-browser-skill-forge.test.mjs
+  s_77a2a5f241d64b::t_2ead601ce656ee 2290-2719
+skills/agent-browser-skill-forge/references/output_template.md
+  s_6301ba48fc6feb::t_7eba963dc1d984 417-487
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "c37447c899436cd80948400782c158a0fdf1081b",
+  "prompts": {},
+  "sessions": {
+    "s_6301ba48fc6feb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f65607c5-64c9-465e-8444-fca79a953e7c",
+        "model": "unknown"
+      },
+      "human_author": "monet88 <minhthang421992@gmail.com>"
+    },
+    "s_77a2a5f241d64b": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a03722-8834-74d4-9f45-e37b90d00162",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "monet88 <minhthang421992@gmail.com>"
+    },
+    "s_d0eca32076ef2e": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_fc8dbc7c3ffenmxhGNIxROeX4E",
+        "model": "unknown"
+      },
+      "human_author": "monet88 <minhthang421992@gmail.com>"
+    }
+  }
+}
