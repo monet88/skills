@@ -1,0 +1,26 @@
+skills/agent-browser-skill-forge/SKILL.md
+  h_17f2fa2b92da6a 153,199
+skills/agent-browser-skill-forge/references/exploration_extraction.md
+  h_17f2fa2b92da6a 201,203-206,269
+skills/agent-browser-skill-forge/references/exploration_operation.md
+  h_17f2fa2b92da6a 254
+skills/agent-browser-skill-forge/references/output_template.md
+  h_17f2fa2b92da6a 74,76-85,155-164,219-220
+skills/agent-browser-skill-forge/scripts/forge-runtime.py
+  h_17f2fa2b92da6a 1067,1092,1121-1124,1141-1151,1154-1158,1160-1166,1169,1171,1173-1204,1235-1244,1263-1269,1329-1330,1447-1473,1475-1486,1544-1566,1589,1592,1627-1641,1643,1692-1698,1700,1716,1727-1763,1765,1793,1795,1911-1926,2163
+tests/agent-browser-skill-forge.test.mjs
+  h_17f2fa2b92da6a 432-438,2747-3007,3009-3131
+tests/fixtures/fixture_server.py
+  h_17f2fa2b92da6a 133-162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "685ae83e1c31ddecb6d4fe5afbdbfe6bc938564c",
+  "prompts": {},
+  "humans": {
+    "h_17f2fa2b92da6a": {
+      "author": "monet88 <minhthang421992@gmail.com>"
+    }
+  }
+}
