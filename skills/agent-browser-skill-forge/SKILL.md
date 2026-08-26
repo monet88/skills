@@ -150,7 +150,7 @@ Test cases:
 Execution requirements:
 - Follow SKILL.md instructions strictly; do not assume unstated coordinator capabilities or private forge internals.
 - For DIRECT_API_VERIFIED: verify by running `client.py` and importing `APIClient` in Python; steady-state testing must not launch agent-browser.
-- For BROWSER_SESSION_API / DOM_ONLY / HYBRID: execute via documented agent-browser commands using only standard shell pipelines.
+- For BROWSER_SESSION_API / DOM_ONLY / HYBRID: execute via documented agent-browser commands using standard shell pipelines or Windows temp-file redirection.
 - Record specific issues if instructions are unclear, missing, or require coordinator-specific syntax.
 
 Report after execution:
@@ -196,7 +196,7 @@ After black-box tests pass and installation completes, report to the user:
 When the original request included execution intent:
 1. Use the installed Skill (or directly execute from the verified private output directory if installation was skipped or failed) to perform the user's task in steady state.
 2. Follow the Skill's documented CLI commands or Python import interface.
-3. Do not re-enter forge exploration unless deterministic revalidation (`revalidate-skill`) fails with unrecoverable schema drift or architectural change.
+3. Do not re-enter forge exploration unless deterministic revalidation (`python <skill-root>/scripts/forge-runtime.py revalidate-skill --package-dir <pkg>`) fails with unrecoverable schema drift or architectural change.
 
 ---
 

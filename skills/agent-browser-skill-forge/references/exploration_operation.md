@@ -251,7 +251,7 @@ Generated Skills and exploration scripts must use the verified agent-browser CLI
   - `agent-browser network requests [--clear] [--filter <pattern>] [--type <types>] [--method <method>]`
   - `agent-browser network request <requestId>`
 - **JavaScript Execution via Stdin**:
-  - `python scripts/<feature>.py <args> | agent-browser eval --stdin`
+  - `python scripts/<feature>.py <args> | agent-browser eval --stdin` (POSIX) or `python scripts/<feature>.py <args> > temp_eval.js && cmd.exe /c "agent-browser eval --stdin < temp_eval.js"` (Windows)
 
 ---
 

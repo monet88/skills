@@ -198,7 +198,12 @@ When no viable API endpoint exists:
 3. **Static Extraction Script**:
    Write a clean extraction script returning structured JSON:
    ```text
+   POSIX (Bash / Zsh):
    python scripts/<capability>.py | agent-browser eval --stdin
+
+   Windows (PowerShell / Command Prompt):
+   python scripts/<capability>.py > temp_eval.js
+   cmd.exe /c "agent-browser eval --stdin < temp_eval.js"
    ```
 
 4. **AI Workflow (When Static Scripts Cannot Cover)**:
@@ -261,7 +266,7 @@ Use live agent-browser commands only. Never use BrowserAct vocabulary:
 | Offline mode | `agent-browser set offline on` / `agent-browser set offline off` |
 | Tab management | `agent-browser tab` / `agent-browser tab <tabId>` / `agent-browser tab new <url>` |
 | Dialog handling | `agent-browser dialog status` / `agent-browser dialog accept [text]` / `agent-browser dialog dismiss` |
-| JavaScript eval | `python scripts/<feature>.py <args> \| agent-browser eval --stdin` |
+| JavaScript eval | `python scripts/<feature>.py <args> \| agent-browser eval --stdin` (POSIX) / `cmd.exe /c "agent-browser eval --stdin < temp.js"` (Windows) |
 | Close browser | `agent-browser close` |
 
 ---

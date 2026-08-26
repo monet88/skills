@@ -429,6 +429,13 @@ describe('agent-browser-skill-forge Issue #12 (Extraction Forging & Direct Clien
       assert.match(skillMd, /DOM_ONLY/);
       assert.match(skillMd, /python scripts\/dom-extract\.py/);
       assert.match(skillMd, /agent-browser eval --stdin/);
+
+      const readmeContent = fs.readFileSync(path.join(skillDir, 'README.md'), 'utf8');
+      assert.match(readmeContent, /Browser Steady-State Usage/);
+      assert.match(readmeContent, /python scripts\/dom-extract\.py/);
+      assert.match(readmeContent, /agent-browser eval --stdin/);
+      assert.doesNotMatch(readmeContent, /python client\.py/);
+      assert.doesNotMatch(readmeContent, /from client import APIClient/);
     } finally {
       try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
     }
@@ -2736,6 +2743,389 @@ print(json.dumps(result))
       try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
     }
   });
+
+  test('black-box testing consumes supplied test cases/required parameter values in test-skill', async () => {
+    fixture = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'blackbox-params-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: fixture.baseUrl,
+        path: '/api/required-val',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Param Shop',
+        endpoints: [
+          {
+            id: 'get-with-param',
+            method: 'GET',
+            path: '/api/required-val',
+            classification: 'DIRECT_API_VERIFIED',
+            parameters: {
+              required_val: { type: 'string', in: 'query', name: 'required_val' },
+            },
+            verification: { status: 'PASSED', tested_variations: [{ params: { required_val: 'invalid' }, status: 200 }] },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'param-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const skillDir = JSON.parse(genRaw).output_dir;
+
+      // 1. Without --test-cases: must fail because required_val='invalid' fails on fixture server (returns 400)
+      let defaultFailed = false;
+      try {
+        await runPythonAsync(['test-skill', '--package-dir', skillDir, '--base-url', fixture.baseUrl]);
+      } catch (err) {
+        defaultFailed = true;
+      }
+      assert.ok(defaultFailed, 'test-skill must fail when using default incorrect tested_variations');
+
+      // 2. With --test-cases file: must succeed because it overrides the parameter to 'valid'
+      const testCasesFile = path.join(root, 'test-cases.json');
+      fs.writeFileSync(testCasesFile, JSON.stringify({
+        'get-with-param': { required_val: 'valid' }
+      }), 'utf8');
+
+      const testReportRaw = await runPythonAsync([
+        'test-skill',
+        '--package-dir', skillDir,
+        '--base-url', fixture.baseUrl,
+        '--test-cases', testCasesFile
+      ]);
+      const testReport = JSON.parse(testReportRaw);
+
+      assert.equal(testReport.all_passed, true, 'test-skill must pass when using correct parameters supplied via --test-cases');
+      assert.equal(testReport.components[0].import_check, true);
+      assert.equal(testReport.components[0].cli_check, true);
+      // Make sure the explicit keys required by Gap 3 are present even when empty
+      assert.ok('unclear_instructions' in testReport);
+      assert.ok('severe_issues' in testReport);
+      assert.ok('failures' in testReport);
+      assert.ok('failure_reasons' in testReport);
+      assert.ok('severe_accuracy_performance_issues' in testReport);
+    } finally {
+      await fixture.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('black-box testing BROWSER_SESSION_API through documented agent-browser prerequisites', async () => {
+    fixture = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'blackbox-session-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: fixture.baseUrl,
+        path: '/catalog',
+        classification: 'BROWSER_SESSION_API',
+        site_name: 'Session Shop',
+        capability_slug: 'session-extract',
+        endpoints: [
+          {
+            id: 'session-extract',
+            method: 'GET',
+            path: '/catalog',
+            classification: 'BROWSER_SESSION_API',
+            verification: { status: 'FALLBACK' },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'session-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const skillDir = JSON.parse(genRaw).output_dir;
+
+      // test-skill must report successful black-box validation of the script helper
+      const testReportRaw = await runPythonAsync(['test-skill', '--package-dir', skillDir, '--base-url', fixture.baseUrl]);
+      const testReport = JSON.parse(testReportRaw);
+
+      assert.equal(testReport.all_passed, true);
+      assert.equal(testReport.components[0].classification, 'BROWSER_SESSION_API');
+      assert.equal(testReport.components[0].script_check, true);
+
+      const readmeContent = fs.readFileSync(path.join(skillDir, 'README.md'), 'utf8');
+      assert.match(readmeContent, /Browser Steady-State Usage/);
+      assert.match(readmeContent, /python scripts\/session-extract\.py/);
+      assert.match(readmeContent, /agent-browser eval --stdin/);
+      assert.doesNotMatch(readmeContent, /python client\.py/);
+      assert.doesNotMatch(readmeContent, /from client import APIClient/);
+
+      // Verify execution of the generated script helper via agent-browser boundary
+      const bootstrap = JSON.parse(runPython(['bootstrap', '--root', root, '--task', 'session-eval']));
+      try {
+        runPython(['exec', '--root', root, '--run-id', bootstrap.run_id, '--', 'open', `${fixture.baseUrl}/catalog`]);
+        runPython(['exec', '--root', root, '--run-id', bootstrap.run_id, '--', 'wait', '--load', 'networkidle']);
+        const scriptFiles = fs.readdirSync(path.join(skillDir, 'scripts')).filter(f => f.endsWith('.py'));
+        assert.ok(scriptFiles.length > 0, 'Generated scripts helper must exist');
+        const sessionScript = path.join(skillDir, 'scripts', scriptFiles[0]);
+        const jsCode = execFileSync(PYTHON, [sessionScript], { encoding: 'utf8' });
+        const b64 = Buffer.from(jsCode, 'utf8').toString('base64');
+        const evalOutRaw = runPython(['exec', '--root', root, '--run-id', bootstrap.run_id, '--', 'eval', '-b', b64]);
+        let evalData = JSON.parse(evalOutRaw);
+        if (typeof evalData === 'string') {
+          evalData = JSON.parse(evalData);
+        }
+        assert.ok(evalData.items && evalData.items.length > 0, 'DOM extraction must return items array');
+        assert.equal(evalData.items[0].title, 'Product 1', 'Title must match Product 1');
+      } finally {
+        try { runPython(['exec', '--root', root, '--run-id', bootstrap.run_id, '--', 'close']); } catch {}
+      }
+    } finally {
+      await fixture.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: generated README and SKILL provide portable Windows and POSIX browser steady-state instructions', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'portability-test-'));
+
+    try {
+      const specFile = path.join(root, 'browser-spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: 'https://portable-store.example.com',
+        path: '/items',
+        classification: 'DOM_ONLY',
+        site_name: 'Portable Store',
+        capability_slug: 'items-extract',
+        endpoints: [
+          {
+            id: 'items-extract',
+            method: 'GET',
+            path: '/items',
+            classification: 'DOM_ONLY',
+            verification: { status: 'FALLBACK' },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'portable-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const skillDir = JSON.parse(genRaw).output_dir;
+
+      const readmeContent = fs.readFileSync(path.join(skillDir, 'README.md'), 'utf8');
+      assert.match(readmeContent, /Browser Steady-State Usage/);
+      assert.match(readmeContent, /agent-browser eval --stdin/);
+      assert.match(readmeContent, /temp_eval\.js/, 'README must include Windows temp-file redirection instruction');
+      assert.match(readmeContent, /cmd\.exe \/c "agent-browser eval --stdin < temp_eval\.js"/, 'README must include cmd.exe redirection for Windows');
+
+      const skillMdContent = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+      assert.match(skillMdContent, /agent-browser eval --stdin/);
+      assert.match(skillMdContent, /temp_eval\.js/, 'SKILL.md must include Windows instruction');
+      assert.match(skillMdContent, /cmd\.exe \/c "agent-browser eval --stdin < temp_eval\.js"/, 'SKILL.md must include cmd.exe redirection for Windows');
+
+      const valRaw = runPython(['validate-package', '--package-dir', skillDir]);
+      const val = JSON.parse(valRaw);
+      assert.equal(val.valid, true, 'Package with portable instructions must pass validation');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: generated README revalidation instructions use supported invocation without referencing package-local forge-runtime.py', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'reval-doc-test-'));
+
+    try {
+      // 1. Direct API skill
+      const directSpecFile = path.join(root, 'direct-spec.json');
+      fs.writeFileSync(directSpecFile, JSON.stringify({
+        base_url: 'https://api-reval.example.com',
+        path: '/api/v1/data',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'API Store',
+        endpoints: [
+          {
+            id: 'get-data',
+            method: 'GET',
+            path: '/api/v1/data',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: { status: 'PASSED', tested_variations: [{ params: {}, status: 200 }] },
+          },
+        ],
+      }), 'utf8');
+
+      const directGenRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'direct-reval-skill',
+        '--endpoint-spec', directSpecFile,
+      ]);
+      const directSkillDir = JSON.parse(directGenRaw).output_dir;
+
+      const directReadme = fs.readFileSync(path.join(directSkillDir, 'README.md'), 'utf8');
+      assert.match(directReadme, /python client\.py/, 'Direct API README should document direct client revalidation');
+      assert.match(directReadme, /<skill-root>\/scripts\/forge-runtime\.py revalidate-skill/, 'README must reference <skill-root>/scripts/forge-runtime.py');
+      assert.doesNotMatch(directReadme, /python forge-runtime\.py revalidate-skill/, 'README must NOT reference non-existent package-local forge-runtime.py');
+
+      // 2. DOM_ONLY skill
+      const domSpecFile = path.join(root, 'dom-spec.json');
+      fs.writeFileSync(domSpecFile, JSON.stringify({
+        base_url: 'https://dom-reval.example.com',
+        path: '/items',
+        classification: 'DOM_ONLY',
+        site_name: 'DOM Store',
+        endpoints: [
+          {
+            id: 'dom-items',
+            method: 'GET',
+            path: '/items',
+            classification: 'DOM_ONLY',
+            verification: { status: 'FALLBACK' },
+          },
+        ],
+      }), 'utf8');
+
+      const domGenRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'dom-reval-skill',
+        '--endpoint-spec', domSpecFile,
+      ]);
+      const domSkillDir = JSON.parse(domGenRaw).output_dir;
+
+      const domReadme = fs.readFileSync(path.join(domSkillDir, 'README.md'), 'utf8');
+      assert.match(domReadme, /<skill-root>\/scripts\/forge-runtime\.py revalidate-skill/, 'README must reference <skill-root>/scripts/forge-runtime.py');
+      assert.doesNotMatch(domReadme, /python forge-runtime\.py revalidate-skill/, 'README must NOT reference non-existent package-local forge-runtime.py');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('regression: generated SKILL.md Recovery & Revalidation is classification and component-aware', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'recovery-text-test-'));
+
+    try {
+      // 1. Browser-only (DOM_ONLY): must NOT reference python client.py
+      const domSpec = path.join(root, 'dom-spec.json');
+      fs.writeFileSync(domSpec, JSON.stringify({
+        base_url: 'https://dom-only.example.com',
+        path: '/catalog',
+        classification: 'DOM_ONLY',
+        site_name: 'DOM Only Site',
+        capability_slug: 'catalog-scrape',
+        endpoints: [
+          {
+            id: 'catalog-scrape',
+            method: 'GET',
+            path: '/catalog',
+            classification: 'DOM_ONLY',
+            verification: { status: 'FALLBACK' },
+          },
+        ],
+      }), 'utf8');
+
+      const domGenRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'dom-skill', '--endpoint-spec', domSpec]);
+      const domSkillDir = JSON.parse(domGenRaw).output_dir;
+      const domSkillMd = fs.readFileSync(path.join(domSkillDir, 'SKILL.md'), 'utf8');
+      assert.match(domSkillMd, /Run the verified browser extraction script/);
+      assert.doesNotMatch(domSkillMd, /python client\.py/, 'DOM_ONLY SKILL.md must not reference python client.py');
+
+      // 2. Browser-only (BROWSER_SESSION_API): must NOT reference python client.py
+      const sessionSpec = path.join(root, 'session-spec.json');
+      fs.writeFileSync(sessionSpec, JSON.stringify({
+        base_url: 'https://session.example.com',
+        path: '/session-items',
+        classification: 'BROWSER_SESSION_API',
+        site_name: 'Session Site',
+        capability_slug: 'session-items',
+        endpoints: [
+          {
+            id: 'session-items',
+            method: 'GET',
+            path: '/session-items',
+            classification: 'BROWSER_SESSION_API',
+            verification: { status: 'FALLBACK' },
+          },
+        ],
+      }), 'utf8');
+
+      const sessionGenRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'session-skill', '--endpoint-spec', sessionSpec]);
+      const sessionSkillDir = JSON.parse(sessionGenRaw).output_dir;
+      const sessionSkillMd = fs.readFileSync(path.join(sessionSkillDir, 'SKILL.md'), 'utf8');
+      assert.match(sessionSkillMd, /Run the verified browser extraction script/);
+      assert.doesNotMatch(sessionSkillMd, /python client\.py/, 'BROWSER_SESSION_API SKILL.md must not reference python client.py');
+
+      // 3. Direct API (DIRECT_API_VERIFIED): must reference python client.py
+      const directSpec = path.join(root, 'direct-spec.json');
+      fs.writeFileSync(directSpec, JSON.stringify({
+        base_url: 'https://direct.example.com',
+        path: '/api/v1/items',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Direct Site',
+        capability_slug: 'direct-items',
+        endpoints: [
+          {
+            id: 'direct-items',
+            method: 'GET',
+            path: '/api/v1/items',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: { status: 'PASSED', tested_variations: [{ params: {}, status: 200 }] },
+          },
+        ],
+      }), 'utf8');
+
+      const directGenRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'direct-skill', '--endpoint-spec', directSpec]);
+      const directSkillDir = JSON.parse(directGenRaw).output_dir;
+      const directSkillMd = fs.readFileSync(path.join(directSkillDir, 'SKILL.md'), 'utf8');
+      assert.match(directSkillMd, /Run the verified client \(`python client\.py`\)/);
+
+      // 4. HYBRID: must reference both client.py and browser extraction script
+      const hybridSpec = path.join(root, 'hybrid-spec.json');
+      fs.writeFileSync(hybridSpec, JSON.stringify({
+        base_url: 'https://hybrid.example.com',
+        classification: 'HYBRID',
+        site_name: 'Hybrid Site',
+        capability_slug: 'hybrid-cap',
+        endpoints: [
+          {
+            id: 'api-call',
+            method: 'GET',
+            path: '/api/call',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: { status: 'PASSED', tested_variations: [{ params: {}, status: 200 }] },
+          },
+          {
+            id: 'dom-call',
+            method: 'GET',
+            path: '/dom/call',
+            classification: 'DOM_ONLY',
+            verification: { status: 'FALLBACK' },
+          },
+        ],
+      }), 'utf8');
+
+      const hybridGenRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'hybrid-skill', '--endpoint-spec', hybridSpec]);
+      const hybridSkillDir = JSON.parse(hybridGenRaw).output_dir;
+      const hybridSkillMd = fs.readFileSync(path.join(hybridSkillDir, 'SKILL.md'), 'utf8');
+      assert.match(hybridSkillMd, /python client\.py/);
+      assert.match(hybridSkillMd, /browser extraction script/);
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
 });
-
-

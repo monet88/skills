@@ -130,6 +130,36 @@ class StoreHandler(http.server.SimpleHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/api/required-val":
+            qs = urllib.parse.parse_qs(parsed.query)
+            val = qs.get("required_val", [None])[0]
+            if not val or val != "valid":
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "error": True,
+                            "message": "Missing required_val parameter",
+                        }
+                    ).encode("utf-8")
+                )
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(
+                json.dumps(
+                    {
+                        "success": True,
+                        "items": [{"id": "item-verified", "title": "Verified Item", "price": 10}],
+                    }
+                ).encode("utf-8")
+            )
+            return
+
+
         self.send_response(404)
         self.end_headers()
         self.wfile.write(b"Not Found")

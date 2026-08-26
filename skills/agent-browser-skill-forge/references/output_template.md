@@ -71,9 +71,18 @@ Include inline comments `// {param_name} enumeration retrieval: ...` within gene
 
 ## Browser-Side JavaScript
 
-When a generated browser-dependent script emits JavaScript, make the Python file assemble only browser-side JS and business parameters. The canonical cross-shell execution form is:
+When a generated browser-dependent script emits JavaScript, make the Python file assemble only browser-side JS and business parameters. The canonical cross-shell execution forms are:
 
-`python scripts/{feature}.py [options] | agent-browser eval --stdin`
+**POSIX (Bash / Zsh):**
+```bash
+python scripts/{feature}.py [options] | agent-browser eval --stdin
+```
+
+**Windows (PowerShell / Command Prompt):**
+```bash
+python scripts/{feature}.py [options] > temp_eval.js
+cmd.exe /c "agent-browser eval --stdin < temp_eval.js"
+```
 
 ---
 
@@ -143,7 +152,16 @@ Output example:
 
 ### {BROWSER_SESSION_API / DOM_ONLY Component} (when browser is required)
 
-`python scripts/{feature}.py [options] | agent-browser eval --stdin`
+**POSIX (Bash / Zsh):**
+```bash
+python scripts/{feature}.py [options] | agent-browser eval --stdin
+```
+
+**Windows (PowerShell / Command Prompt):**
+```bash
+python scripts/{feature}.py [options] > temp_eval.js
+cmd.exe /c "agent-browser eval --stdin < temp_eval.js"
+```
 
 Parameters:
 - `--query <string>`: Search filter.
@@ -198,8 +216,8 @@ When a structural failure occurs, the generated client or script returns:
 
 ## Recovery & Revalidation Lifecycle
 
-1. **Fast Path**: Execute the known verified implementation.
-2. **Revalidation**: On unexpected failure (e.g. 401/403 or missing selector), test the known endpoint/selectors to isolate changes.
+1. **Fast Path**: Execute the known verified implementation (`python client.py` for direct/hybrid APIs, or `python scripts/{feature}.py` for browser extraction).
+2. **Revalidation**: On unexpected failure (e.g. 401/403 or missing selector), revalidate using `python <skill-root>/scripts/forge-runtime.py revalidate-skill --package-dir .` to test known endpoints/selectors.
 3. **Drift Repair**: Update parameters/headers or refresh auth tokens if expired.
 4. **Re-exploration**: Only enter forge re-exploration if the target website architecture fundamentally changed.
 
@@ -484,4 +502,3 @@ npx skills add ".agent-forge/output/<skill-name>" --agent <agent-name> --copy -y
 ```
 
 Installation failure must be reported clearly and must never delete or corrupt the accepted package in `.agent-forge/output/<skill-name>/`.
-
