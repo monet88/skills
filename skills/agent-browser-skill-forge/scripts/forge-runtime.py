@@ -1173,14 +1173,14 @@ python client.py
 
 - **Full capability revalidation** (via forge runtime):
 ```bash
-python <skill-root>/scripts/forge-runtime.py revalidate-skill --package-dir .
+python <agent-browser-skill-forge-root>/scripts/forge-runtime.py revalidate-skill --package-dir .
 ```'''
     else:
         reval_section = f'''## Revalidation
 To revalidate this capability against drift or auth expiration:
 
 ```bash
-python <skill-root>/scripts/forge-runtime.py revalidate-skill --package-dir .
+python <agent-browser-skill-forge-root>/scripts/forge-runtime.py revalidate-skill --package-dir .
 ```'''
 
     readme_content = f'''# {site_name} — {capability_name}
@@ -1327,7 +1327,7 @@ Extract structured item listings from {site_name} with verified parameter variat
 ## Recovery & Revalidation Lifecycle
 
 1. Fast path: {recovery_fast_path}
-2. On 401/403 or schema drift: Revalidate capability via `python <skill-root>/scripts/forge-runtime.py revalidate-skill --package-dir .`.
+2. On 401/403 or schema drift: Revalidate capability via `python <agent-browser-skill-forge-root>/scripts/forge-runtime.py revalidate-skill --package-dir .`.
 3. Re-exploration: Only enter forge if API contract changed.
 '''
     (output_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")

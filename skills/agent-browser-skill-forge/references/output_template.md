@@ -217,7 +217,7 @@ When a structural failure occurs, the generated client or script returns:
 ## Recovery & Revalidation Lifecycle
 
 1. **Fast Path**: Execute the known verified implementation (`python client.py` for direct/hybrid APIs, or `python scripts/{feature}.py` for browser extraction).
-2. **Revalidation**: On unexpected failure (e.g. 401/403 or missing selector), revalidate using `python <skill-root>/scripts/forge-runtime.py revalidate-skill --package-dir .` to test known endpoints/selectors.
+2. **Revalidation**: On unexpected failure (e.g. 401/403 or missing selector), revalidate using `python <agent-browser-skill-forge-root>/scripts/forge-runtime.py revalidate-skill --package-dir .` to test known endpoints/selectors.
 3. **Drift Repair**: Update parameters/headers or refresh auth tokens if expired.
 4. **Re-exploration**: Only enter forge re-exploration if the target website architecture fundamentally changed.
 

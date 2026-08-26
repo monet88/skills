@@ -320,3 +320,203 @@ describe('Ask Impeccable Acceptance Suite', () => {
     assert.doesNotMatch(gitStatus, /\.upstream/, 'git status must not track .upstream files');
   });
 });
+
+describe('Agent Browser Skill Forge Acceptance Suite', () => {
+  let tempTestDir;
+
+  before(() => {
+    tempTestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-browser-forge-acceptance-'));
+  });
+
+  after(() => {
+    if (tempTestDir && fs.existsSync(tempTestDir)) {
+      try {
+        fs.rmSync(tempTestDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      } catch (err) {
+        if (err?.code !== 'EPERM') throw err;
+      }
+    }
+  });
+
+  test('CLI discovers agent-browser-skill-forge alongside existing skills from local repository', () => {
+    const output = execSync(`npx skills add "${REPO_ROOT}" -l`, {
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+
+    assert.match(output, /agent-browser-skill-forge/, 'CLI should list agent-browser-skill-forge');
+    assert.match(output, /trusted configuration boundary/i, 'CLI should show the agent-browser-skill-forge description');
+    assert.match(output, /browser-act-skill-forge/, 'Existing browser-act-skill-forge must remain discoverable');
+    assert.match(output, /pinchtab-skill-forge/, 'Existing pinchtab-skill-forge must remain discoverable');
+    assert.match(output, /ask-impeccable/, 'Existing ask-impeccable must remain discoverable');
+  });
+
+  test('Source repository contains required agents/openai.yaml metadata and policy with products', () => {
+    const sourceYamlPath = path.join(REPO_ROOT, 'skills', 'agent-browser-skill-forge', 'agents', 'openai.yaml');
+    assert.ok(fs.existsSync(sourceYamlPath), `Source agents/openai.yaml must exist at ${sourceYamlPath}`);
+
+    const content = fs.readFileSync(sourceYamlPath, 'utf8');
+    const parsed = parseOpenAiYaml(content);
+    assert.ok(parsed.interface.display_name, 'display_name must be defined');
+    assert.match(parsed.interface.display_name, /Agent Browser Skill Forge/i);
+    assert.match(parsed.interface.short_description, /agent-browser/i, 'short_description must mention agent-browser');
+    assert.match(parsed.interface.default_prompt, /agent-browser-skill-forge/i, 'default_prompt must support explicit invocation');
+    assert.equal(parsed.policy.allow_implicit_invocation, true, 'policy must set allow_implicit_invocation: true');
+    assert.deepEqual(parsed.policy.products, ['chatgpt', 'codex'], 'policy.products must contain chatgpt and codex');
+  });
+
+  test('Installs into isolated temporary environment for Antigravity with agents/openai.yaml, policy, and products bundled', () => {
+    const agentTempDir = path.join(tempTestDir, 'antigravity-env');
+    fs.mkdirSync(agentTempDir, { recursive: true });
+
+    execSync(`npx skills add "${REPO_ROOT}" --agent antigravity --copy -y`, {
+      cwd: agentTempDir,
+      encoding: 'utf8',
+      timeout: 30000,
+    });
+
+    const skillDir = path.join(agentTempDir, '.agents', 'skills', 'agent-browser-skill-forge');
+    const installedSkillPath = path.join(skillDir, 'SKILL.md');
+    const installedYamlPath = path.join(skillDir, 'agents', 'openai.yaml');
+    const installedRuntimePath = path.join(skillDir, 'scripts', 'forge-runtime.py');
+
+    assert.ok(fs.existsSync(installedSkillPath), `Expected installed SKILL.md at ${installedSkillPath}`);
+    assert.ok(fs.existsSync(installedYamlPath), `Expected installed agents/openai.yaml at ${installedYamlPath}`);
+    assert.ok(fs.existsSync(installedRuntimePath), `Expected installed scripts/forge-runtime.py at ${installedRuntimePath}`);
+
+    const skillContent = fs.readFileSync(installedSkillPath, 'utf8');
+    const parsedSkill = parseFrontmatter(skillContent);
+    assert.ok(parsedSkill, 'Installed SKILL.md must have valid YAML frontmatter');
+    assert.equal(parsedSkill.data.name, 'agent-browser-skill-forge');
+    assert.match(parsedSkill.data.description, /agent-browser/i);
+
+    const yamlContent = fs.readFileSync(installedYamlPath, 'utf8');
+    const parsedYaml = parseOpenAiYaml(yamlContent);
+    assert.equal(parsedYaml.interface.display_name, 'Agent Browser Skill Forge');
+    assert.match(parsedYaml.interface.short_description, /agent-browser/i);
+    assert.match(parsedYaml.interface.default_prompt, /agent-browser-skill-forge/i);
+    assert.equal(parsedYaml.policy.allow_implicit_invocation, true, 'Installed policy must have allow_implicit_invocation: true');
+    assert.deepEqual(parsedYaml.policy.products, ['chatgpt', 'codex'], 'Installed policy.products must contain chatgpt and codex');
+
+    // Verify references and scripts
+    assert.ok(fs.existsSync(path.join(skillDir, 'references', 'exploration_extraction.md')));
+    assert.ok(fs.existsSync(path.join(skillDir, 'references', 'exploration_operation.md')));
+    assert.ok(fs.existsSync(path.join(skillDir, 'references', 'output_template.md')));
+
+    // Verify no .upstream files or private .agent-forge are copied into the skill directory
+    const installedFiles = listFilesRecursive(skillDir);
+    assert.ok(!installedFiles.some(f => f.includes('.upstream')), 'Installed skill must not contain .upstream files');
+    assert.ok(!installedFiles.some(f => f.includes('.agent-forge')), 'Installed skill must not contain .agent-forge files');
+  });
+
+  test('Installs into isolated temporary environment for Claude Code with agents/openai.yaml, policy, and products bundled', () => {
+    const agentTempDir = path.join(tempTestDir, 'claude-code-env');
+    fs.mkdirSync(agentTempDir, { recursive: true });
+
+    execSync(`npx skills add "${REPO_ROOT}" --agent claude-code --copy -y`, {
+      cwd: agentTempDir,
+      encoding: 'utf8',
+      timeout: 60000,
+    });
+
+    const skillDir = path.join(agentTempDir, '.claude', 'skills', 'agent-browser-skill-forge');
+    const installedSkillPath = path.join(skillDir, 'SKILL.md');
+    const installedYamlPath = path.join(skillDir, 'agents', 'openai.yaml');
+
+    assert.ok(fs.existsSync(installedSkillPath), `Expected installed SKILL.md at ${installedSkillPath}`);
+    assert.ok(fs.existsSync(installedYamlPath), `Expected installed agents/openai.yaml at ${installedYamlPath}`);
+
+    const skillContent = fs.readFileSync(installedSkillPath, 'utf8');
+    const parsedSkill = parseFrontmatter(skillContent);
+    assert.ok(parsedSkill, 'Installed SKILL.md must have valid YAML frontmatter');
+    assert.equal(parsedSkill.data.name, 'agent-browser-skill-forge');
+
+    const yamlContent = fs.readFileSync(installedYamlPath, 'utf8');
+    const parsedYaml = parseOpenAiYaml(yamlContent);
+    assert.equal(parsedYaml.interface.display_name, 'Agent Browser Skill Forge');
+    assert.equal(parsedYaml.policy.allow_implicit_invocation, true);
+    assert.deepEqual(parsedYaml.policy.products, ['chatgpt', 'codex']);
+  });
+
+  test('Installs into isolated temporary environment for Codex with agents/openai.yaml, policy, and products bundled', () => {
+    const agentTempDir = path.join(tempTestDir, 'codex-env');
+    fs.mkdirSync(agentTempDir, { recursive: true });
+
+    execSync(`npx skills add "${REPO_ROOT}" --agent codex --copy -y`, {
+      cwd: agentTempDir,
+      encoding: 'utf8',
+      timeout: 60000,
+    });
+
+    const skillDir = path.join(agentTempDir, '.agents', 'skills', 'agent-browser-skill-forge');
+    const installedSkillPath = path.join(skillDir, 'SKILL.md');
+    const installedYamlPath = path.join(skillDir, 'agents', 'openai.yaml');
+
+    assert.ok(fs.existsSync(installedSkillPath), `Expected installed SKILL.md at ${installedSkillPath}`);
+    assert.ok(fs.existsSync(installedYamlPath), `Expected installed agents/openai.yaml at ${installedYamlPath}`);
+
+    const skillContent = fs.readFileSync(installedSkillPath, 'utf8');
+    const parsedSkill = parseFrontmatter(skillContent);
+    assert.ok(parsedSkill, 'Installed SKILL.md must have valid YAML frontmatter');
+    assert.equal(parsedSkill.data.name, 'agent-browser-skill-forge');
+
+    const yamlContent = fs.readFileSync(installedYamlPath, 'utf8');
+    const parsedYaml = parseOpenAiYaml(yamlContent);
+    assert.equal(parsedYaml.interface.display_name, 'Agent Browser Skill Forge');
+    assert.equal(parsedYaml.policy.allow_implicit_invocation, true);
+    assert.deepEqual(parsedYaml.policy.products, ['chatgpt', 'codex']);
+  });
+
+  test('Multi-agent installation bundles SKILL.md, agents/openai.yaml, and policy across antigravity, claude-code, and codex', () => {
+    const multiAgentDir = path.join(tempTestDir, 'multi-agent-env');
+    fs.mkdirSync(multiAgentDir, { recursive: true });
+
+    execSync(`npx skills add "${REPO_ROOT}" --agent antigravity claude-code codex --copy -y`, {
+      cwd: multiAgentDir,
+      encoding: 'utf8',
+      timeout: 60000,
+    });
+
+    const agentsSkillDir = path.join(multiAgentDir, '.agents', 'skills', 'agent-browser-skill-forge');
+    const claudeSkillDir = path.join(multiAgentDir, '.claude', 'skills', 'agent-browser-skill-forge');
+
+    assert.ok(fs.existsSync(path.join(agentsSkillDir, 'SKILL.md')), 'Must have SKILL.md in .agents/skills');
+    assert.ok(fs.existsSync(path.join(agentsSkillDir, 'agents', 'openai.yaml')), 'Must have agents/openai.yaml in .agents/skills');
+    assert.ok(fs.existsSync(path.join(claudeSkillDir, 'SKILL.md')), 'Must have SKILL.md in .claude/skills');
+    assert.ok(fs.existsSync(path.join(claudeSkillDir, 'agents', 'openai.yaml')), 'Must have agents/openai.yaml in .claude/skills');
+
+    const agentsYaml = parseOpenAiYaml(fs.readFileSync(path.join(agentsSkillDir, 'agents', 'openai.yaml'), 'utf8'));
+    const claudeYaml = parseOpenAiYaml(fs.readFileSync(path.join(claudeSkillDir, 'agents', 'openai.yaml'), 'utf8'));
+
+    assert.equal(agentsYaml.policy.allow_implicit_invocation, true);
+    assert.deepEqual(agentsYaml.policy.products, ['chatgpt', 'codex']);
+    assert.equal(claudeYaml.policy.allow_implicit_invocation, true);
+    assert.deepEqual(claudeYaml.policy.products, ['chatgpt', 'codex']);
+  });
+
+  test('Existing forges (browser-act-skill-forge and pinchtab-skill-forge) remain discoverable and valid', () => {
+    const browserActSkillPath = path.join(REPO_ROOT, 'skills', 'browser-act-skill-forge', 'SKILL.md');
+    const pinchtabSkillPath = path.join(REPO_ROOT, 'skills', 'pinchtab-skill-forge', 'SKILL.md');
+
+    assert.ok(fs.existsSync(browserActSkillPath), 'browser-act-skill-forge SKILL.md must exist');
+    assert.ok(fs.existsSync(pinchtabSkillPath), 'pinchtab-skill-forge SKILL.md must exist');
+
+    const parsedBrowserAct = parseFrontmatter(fs.readFileSync(browserActSkillPath, 'utf8'));
+    assert.equal(parsedBrowserAct.data.name, 'browser-act-skill-forge');
+
+    const parsedPinchtab = parseFrontmatter(fs.readFileSync(pinchtabSkillPath, 'utf8'));
+    assert.equal(parsedPinchtab.data.name, 'pinchtab-skill-forge');
+  });
+
+  test('.agent-forge and private artifacts remain untracked and excluded', () => {
+    const gitignorePath = path.join(REPO_ROOT, '.gitignore');
+    const gitignoreContent = fs.readFileSync(gitignorePath, 'utf8');
+    assert.match(gitignoreContent, /^\.agent-forge\/$/m, '.gitignore must exclude .agent-forge/');
+
+    const gitStatus = execSync('git status --porcelain', {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    });
+    assert.doesNotMatch(gitStatus, /\.agent-forge/, 'git status must not track .agent-forge files');
+  });
+});

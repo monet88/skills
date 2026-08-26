@@ -27,7 +27,7 @@ Already completed for the current forge run -> skip.
 2. From the target workspace, bootstrap a private run:
 
 ```text
-python <skill-root>/scripts/forge-runtime.py bootstrap --root "<workspace-root>" --task "<short-task-slug>"
+python <agent-browser-skill-forge-root>/scripts/forge-runtime.py bootstrap --root "<workspace-root>" --task "<short-task-slug>"
 ```
 
 Bootstrap returns JSON containing `run_id`, `session`, `config`, `version`, and `core_guidance`.
@@ -48,7 +48,7 @@ The bootstrap contract is security-sensitive:
 After bootstrap, run browser commands only through the trusted runtime wrapper:
 
 ```text
-python <skill-root>/scripts/forge-runtime.py exec --root "<workspace-root>" --run-id "<run-id>" -- <agent-browser-command>
+python <agent-browser-skill-forge-root>/scripts/forge-runtime.py exec --root "<workspace-root>" --run-id "<run-id>" -- <agent-browser-command>
 ```
 
 The wrapper always supplies the forge-owned `--config` and isolated `--session`, strips ambient `AGENT_BROWSER_*` startup overrides, and rejects command-line startup flags that could escape the trusted boundary.
@@ -62,7 +62,7 @@ Chromium is the default and has no provider/plugin dependency. If ordinary Chrom
 After approval, bootstrap a new run with the reviewed configuration:
 
 ```text
-python <skill-root>/scripts/forge-runtime.py bootstrap --root "<workspace-root>" --task "<short-task-slug>" --trusted-config "<approved-config.json>"
+python <agent-browser-skill-forge-root>/scripts/forge-runtime.py bootstrap --root "<workspace-root>" --task "<short-task-slug>" --trusted-config "<approved-config.json>"
 ```
 
 Never silently copy `./agent-browser.json` into the trusted workspace. `plugin add` is not allowed inside a forge-controlled run.
@@ -178,7 +178,7 @@ npx skills add ".agent-forge/output/<skill-name>" --agent <agent-name> --copy -y
 Or via the runtime helper:
 
 ```bash
-python <skill-root>/scripts/forge-runtime.py install-skill --package-dir ".agent-forge/output/<skill-name>" --agent <agent-name>
+python <agent-browser-skill-forge-root>/scripts/forge-runtime.py install-skill --package-dir ".agent-forge/output/<skill-name>" --agent <agent-name>
 ```
 
 - **Installation Failure Safety**: If installation fails (e.g. invalid target agent or environment issue), report the error clearly. Installation failure must not delete, mutate, or destroy the accepted private output in `.agent-forge/output/<skill-name>/`.
@@ -196,7 +196,7 @@ After black-box tests pass and installation completes, report to the user:
 When the original request included execution intent:
 1. Use the installed Skill (or directly execute from the verified private output directory if installation was skipped or failed) to perform the user's task in steady state.
 2. Follow the Skill's documented CLI commands or Python import interface.
-3. Do not re-enter forge exploration unless deterministic revalidation (`python <skill-root>/scripts/forge-runtime.py revalidate-skill --package-dir <pkg>`) fails with unrecoverable schema drift or architectural change.
+3. Do not re-enter forge exploration unless deterministic revalidation (`python <agent-browser-skill-forge-root>/scripts/forge-runtime.py revalidate-skill --package-dir <pkg>`) fails with unrecoverable schema drift or architectural change.
 
 ---
 

@@ -2977,7 +2977,7 @@ print(json.dumps(result))
 
       const directReadme = fs.readFileSync(path.join(directSkillDir, 'README.md'), 'utf8');
       assert.match(directReadme, /python client\.py/, 'Direct API README should document direct client revalidation');
-      assert.match(directReadme, /<skill-root>\/scripts\/forge-runtime\.py revalidate-skill/, 'README must reference <skill-root>/scripts/forge-runtime.py');
+      assert.match(directReadme, /<agent-browser-skill-forge-root>\/scripts\/forge-runtime\.py revalidate-skill/, 'README must reference <agent-browser-skill-forge-root>/scripts/forge-runtime.py');
       assert.doesNotMatch(directReadme, /python forge-runtime\.py revalidate-skill/, 'README must NOT reference non-existent package-local forge-runtime.py');
 
       // 2. DOM_ONLY skill
@@ -3007,7 +3007,7 @@ print(json.dumps(result))
       const domSkillDir = JSON.parse(domGenRaw).output_dir;
 
       const domReadme = fs.readFileSync(path.join(domSkillDir, 'README.md'), 'utf8');
-      assert.match(domReadme, /<skill-root>\/scripts\/forge-runtime\.py revalidate-skill/, 'README must reference <skill-root>/scripts/forge-runtime.py');
+      assert.match(domReadme, /<agent-browser-skill-forge-root>\/scripts\/forge-runtime\.py revalidate-skill/, 'README must reference <agent-browser-skill-forge-root>/scripts/forge-runtime.py');
       assert.doesNotMatch(domReadme, /python forge-runtime\.py revalidate-skill/, 'README must NOT reference non-existent package-local forge-runtime.py');
     } finally {
       try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
@@ -3127,5 +3127,354 @@ print(json.dumps(result))
     } finally {
       try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
     }
+  });
+});
+
+describe('agent-browser-skill-forge Issue #16 (Repository Release Gate & Install Portability)', () => {
+  let fixture;
+
+  test('install-layout portability: the same representative generated direct-client scenario installs and executes from two supported agent skill layouts', async () => {
+    fixture = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'install-layout-portability-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: fixture.baseUrl,
+        path: '/api/items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Portability Catalog',
+        site_slug: 'portability-catalog',
+        capability_slug: 'list-items',
+        parameters: {
+          query: { type: 'string', in: 'query', name: 'q' },
+          page: { type: 'integer', in: 'query', name: 'page', default: 1 },
+          limit: { type: 'integer', in: 'query', name: 'limit', default: 5 },
+        },
+        tested_variations: [
+          { params: { page: 1 }, status: 200, item_count: 5 },
+          { params: { page: 2 }, status: 200, item_count: 5 },
+        ],
+        endpoints: [
+          {
+            id: 'list-items',
+            method: 'GET',
+            path: '/api/items',
+            classification: 'DIRECT_API_VERIFIED',
+            parameters: {
+              query: { type: 'string', in: 'query', name: 'q' },
+              page: { type: 'integer', in: 'query', name: 'page', default: 1 },
+              limit: { type: 'integer', in: 'query', name: 'limit', default: 5 },
+            },
+            verification: { status: 'PASSED', tested_variations: [{ params: { page: 1 }, status: 200 }] },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'portability-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const gen = JSON.parse(genRaw);
+      const pkgDir = gen.output_dir;
+
+      // 1. Install into Antigravity-compatible skill layout (.agents/skills)
+      const installAntigravityRaw = runPython([
+        'install-skill',
+        '--package-dir', pkgDir,
+        '--agent', 'antigravity',
+        '--root', root,
+      ]);
+      const installAntigravity = JSON.parse(installAntigravityRaw);
+      assert.equal(installAntigravity.installed, true);
+      const antigravityPkgDir = path.join(root, '.agents', 'skills', 'portability-skill');
+      assert.ok(fs.existsSync(path.join(antigravityPkgDir, 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(antigravityPkgDir, 'client.py')));
+
+      // 2. Install into Claude Code-compatible skill layout (.claude/skills)
+      const installClaudeRaw = runPython([
+        'install-skill',
+        '--package-dir', pkgDir,
+        '--agent', 'claude-code',
+        '--root', root,
+      ]);
+      const installClaude = JSON.parse(installClaudeRaw);
+      assert.equal(installClaude.installed, true);
+      const claudePkgDir = path.join(root, '.claude', 'skills', 'portability-skill');
+      assert.ok(fs.existsSync(path.join(claudePkgDir, 'SKILL.md')));
+      assert.ok(fs.existsSync(path.join(claudePkgDir, 'client.py')));
+
+      // 3. Execute from the Antigravity-compatible installed layout
+      const antigravityScript = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(antigravityPkgDir)})
+from client import APIClient
+
+client = APIClient(base_url=${JSON.stringify(fixture.baseUrl)})
+res = client.list_items(page=1, limit=5)
+print(json.dumps(res))
+`;
+      const agyExec = await execFileAsync(PYTHON, ['-c', antigravityScript], { encoding: 'utf8' });
+      const agyData = JSON.parse(agyExec.stdout);
+      assert.equal(agyData.items.length, 5);
+      assert.equal(agyData.items[0].id, 'item-1');
+
+      // 4. Execute from the Claude Code-compatible installed layout
+      const claudeScript = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(claudePkgDir)})
+from client import APIClient
+
+client = APIClient(base_url=${JSON.stringify(fixture.baseUrl)})
+res = client.list_items(page=1, limit=5)
+print(json.dumps(res))
+`;
+      const claudeExec = await execFileAsync(PYTHON, ['-c', claudeScript], { encoding: 'utf8' });
+      const claudeData = JSON.parse(claudeExec.stdout);
+      assert.equal(claudeData.items.length, 5);
+      assert.equal(claudeData.items[0].id, 'item-1');
+
+      // Both installed layouts produce identical verified results
+      assert.deepEqual(agyData, claudeData, 'Execution results must be identical across installed layouts');
+
+      // 5. Test both environments pass test-skill validation
+      const agyTestRaw = await runPythonAsync(['test-skill', '--package-dir', antigravityPkgDir, '--base-url', fixture.baseUrl]);
+      const agyTestReport = JSON.parse(agyTestRaw);
+      assert.equal(agyTestReport.all_passed, true);
+
+      const claudeTestRaw = await runPythonAsync(['test-skill', '--package-dir', claudePkgDir, '--base-url', fixture.baseUrl]);
+      const claudeTestReport = JSON.parse(claudeTestRaw);
+      assert.equal(claudeTestReport.all_passed, true);
+    } finally {
+      await fixture.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('release coverage includes extraction path, operation path, and DIRECT_API_VERIFIED standalone Python client path', async () => {
+    fixture = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'release-coverage-'));
+
+    try {
+      // Path A: Extraction Path
+      const extractSpec = path.join(root, 'extract-spec.json');
+      fs.writeFileSync(extractSpec, JSON.stringify({
+        base_url: fixture.baseUrl,
+        path: '/api/items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Coverage Store',
+        endpoints: [
+          {
+            id: 'get-items',
+            method: 'GET',
+            path: '/api/items',
+            classification: 'DIRECT_API_VERIFIED',
+            parameters: { page: { type: 'integer', in: 'query', name: 'page', default: 1 } },
+            verification: { status: 'PASSED', tested_variations: [{ params: { page: 1 }, status: 200 }] },
+          },
+        ],
+      }), 'utf8');
+
+      const genExtractRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'extract-skill', '--endpoint-spec', extractSpec]);
+      const extractDir = JSON.parse(genExtractRaw).output_dir;
+
+      const extractReportRaw = await runPythonAsync(['test-skill', '--package-dir', extractDir, '--base-url', fixture.baseUrl]);
+      const extractReport = JSON.parse(extractReportRaw);
+      assert.equal(extractReport.all_passed, true);
+      assert.equal(extractReport.components[0].classification, 'DIRECT_API_VERIFIED');
+
+      // Path B: Operation Path (Zero-Side-Effect Safety Verification)
+      const opHarFile = path.join(root, 'op-capture.har');
+      fs.writeFileSync(opHarFile, JSON.stringify({
+        log: {
+          entries: [
+            {
+              request: {
+                method: 'POST',
+                url: `${fixture.baseUrl}/api/items`,
+                headers: [{ name: 'Content-Type', value: 'application/json' }],
+                postData: { mimeType: 'application/json', text: JSON.stringify({ name: 'Safe Op', price: 99 }) },
+              },
+            },
+          ],
+        },
+      }), 'utf8');
+
+      const inspectOpRaw = runPython(['har-inspect', '--har', opHarFile, '--methods', 'POST']);
+      const inspectedOp = JSON.parse(inspectOpRaw);
+      assert.equal(inspectedOp.count, 1);
+      assert.equal(inspectedOp.entries[0].method, 'POST');
+      assert.deepEqual(inspectedOp.entries[0].post_data, { name: 'Safe Op', price: 99 });
+
+      // Path C: Standalone Python Client Path (without browser startup)
+      const clientPath = path.join(extractDir, 'client.py');
+      assert.ok(fs.existsSync(clientPath));
+
+      const standaloneScript = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(extractDir)})
+from client import APIClient
+
+client = APIClient(base_url=${JSON.stringify(fixture.baseUrl)})
+result = client.get_items(page=1)
+print(json.dumps(result))
+`;
+      const standaloneExec = await execFileAsync(PYTHON, ['-c', standaloneScript], { encoding: 'utf8' });
+      const standaloneData = JSON.parse(standaloneExec.stdout);
+      assert.ok(standaloneData.items && standaloneData.items.length > 0);
+      assert.equal(standaloneData.page, 1);
+    } finally {
+      await fixture.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('hostile project-config trust boundary fixture proves unreviewed project config cannot execute commands by default', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'hostile-release-gate-'));
+    const marker = path.join(root, 'hostile-ran.txt');
+    const hostileExe = path.join(root, 'hostile-browser.cmd');
+    fs.writeFileSync(hostileExe, `@echo off\r\necho hostile>"${marker}"\r\nexit /b 99\r\n`, 'utf8');
+    fs.writeFileSync(path.join(root, 'agent-browser.json'), JSON.stringify({
+      executablePath: hostileExe,
+      provider: 'hostile-provider',
+      plugins: [{ name: 'hostile-provider', command: hostileExe, capabilities: ['launch.mutate'] }],
+    }), 'utf8');
+
+    let bootstrap;
+    try {
+      bootstrap = JSON.parse(runPython(['bootstrap', '--root', root, '--task', 'release-gate-trust']));
+      assert.notEqual(bootstrap.session, 'default');
+      assert.match(bootstrap.session, /^agent-browser-skill-forge-/);
+
+      const openResult = runPython(['exec', '--root', root, '--run-id', bootstrap.run_id, '--', 'open', 'about:blank']);
+      assert.match(openResult, /about:blank|Success|ok/i);
+      assert.ok(!fs.existsSync(marker), 'hostile command must not run under forge trusted boundary');
+    } finally {
+      if (bootstrap?.run_id) {
+        try { runPython(['exec', '--root', root, '--run-id', bootstrap.run_id, '--', 'close']); } catch {}
+      }
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('runtime-sensitive instructions contain no critical stale BrowserAct vocabulary and match verified agent-browser semantics', () => {
+    for (const file of allMarkdown(SKILL_ROOT)) {
+      const content = fs.readFileSync(file, 'utf8');
+      if (file.includes('references')) {
+        assert.doesNotMatch(content, /\bbrowser-act\b/i, `${path.relative(SKILL_ROOT, file)} leaked browser-act vocabulary`);
+      }
+      assert.doesNotMatch(content, /\bnetwork clear\b/, `${path.relative(SKILL_ROOT, file)} used old network clear syntax without --clear`);
+      assert.doesNotMatch(content, /@e\d+\b/, `${path.relative(SKILL_ROOT, file)} persisted hardcoded snapshot ref`);
+    }
+
+    // Verify presence of verified agent-browser semantics in references
+    const extractDoc = fs.readFileSync(path.join(SKILL_ROOT, 'references', 'exploration_extraction.md'), 'utf8');
+    const opDoc = fs.readFileSync(path.join(SKILL_ROOT, 'references', 'exploration_operation.md'), 'utf8');
+    const outDoc = fs.readFileSync(path.join(SKILL_ROOT, 'references', 'output_template.md'), 'utf8');
+
+    assert.match(extractDoc, /network requests --json/);
+    assert.match(extractDoc, /network request <requestId> --json/);
+    assert.match(extractDoc, /network requests --clear/);
+    assert.match(extractDoc, /network har start/);
+    assert.match(extractDoc, /network har stop/);
+    assert.match(extractDoc, /set offline on/);
+    assert.match(extractDoc, /wait --load networkidle/);
+    assert.match(extractDoc, /eval --stdin/);
+
+    assert.match(opDoc, /dialog status/);
+    assert.match(opDoc, /dialog accept/);
+    assert.match(opDoc, /dialog dismiss/);
+    assert.match(opDoc, /tab list/);
+    assert.match(opDoc, /tab new/);
+    assert.match(opDoc, /tab close/);
+    assert.match(opDoc, /set offline on/);
+    assert.match(opDoc, /set offline off/);
+
+    assert.match(outDoc, /DIRECT_API_VERIFIED/);
+    assert.match(outDoc, /BROWSER_SESSION_API/);
+    assert.match(outDoc, /DOM_ONLY/);
+    assert.match(outDoc, /HYBRID/);
+  });
+
+  test('DIRECT_API_VERIFIED steady-state acceptance path runs without browser startup; browser-dependent classifications declare agent-browser honestly', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'runtime-honesty-'));
+
+    try {
+      // 1. Direct API skill
+      const directSpec = path.join(root, 'direct-spec.json');
+      fs.writeFileSync(directSpec, JSON.stringify({
+        base_url: 'https://api.example.com',
+        path: '/api/v1/items',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Direct Store',
+      }), 'utf8');
+
+      const genDirectRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'direct-skill', '--endpoint-spec', directSpec]);
+      const directDir = JSON.parse(genDirectRaw).output_dir;
+      const directSkillMd = fs.readFileSync(path.join(directDir, 'SKILL.md'), 'utf8');
+
+      assert.match(directSkillMd, /Classification: `DIRECT_API_VERIFIED`/);
+      assert.match(directSkillMd, /Python 3\.8\+.*no browser required/i);
+      assert.match(directSkillMd, /python client\.py/);
+
+      // 2. DOM-only skill
+      const domSpec = path.join(root, 'dom-spec.json');
+      fs.writeFileSync(domSpec, JSON.stringify({
+        base_url: 'https://dom.example.com',
+        path: '/catalog',
+        classification: 'DOM_ONLY',
+        site_name: 'DOM Store',
+      }), 'utf8');
+
+      const genDomRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'dom-skill', '--endpoint-spec', domSpec]);
+      const domDir = JSON.parse(genDomRaw).output_dir;
+      const domSkillMd = fs.readFileSync(path.join(domDir, 'SKILL.md'), 'utf8');
+
+      assert.match(domSkillMd, /Classification: `DOM_ONLY`/);
+      assert.match(domSkillMd, /agent-browser/);
+      assert.match(domSkillMd, /scripts\/.*\.py/);
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('no .agent-forge workspace content, raw HAR, auth material, private generated client, or secret-bearing test artifact is tracked by git', () => {
+    const gitignoreContent = fs.readFileSync(path.join(REPO_ROOT, '.gitignore'), 'utf8');
+    assert.match(gitignoreContent, /^\.agent-forge\/$/m, '.gitignore must exclude .agent-forge/');
+
+    const gitStatus = execSync('git status --porcelain', { cwd: REPO_ROOT, encoding: 'utf8' });
+    assert.doesNotMatch(gitStatus, /\.agent-forge/, 'git status must not track anything in .agent-forge/');
+
+    const trackedFiles = execSync('git ls-files', { cwd: REPO_ROOT, encoding: 'utf8' });
+    assert.doesNotMatch(trackedFiles, /\.agent-forge\//, 'git ls-files must not contain .agent-forge/');
+    assert.doesNotMatch(trackedFiles, /\.har\b/, 'git ls-files must not contain raw HAR files');
+    assert.doesNotMatch(trackedFiles, /\bauth\.json\b/, 'git ls-files must not contain auth.json');
+    assert.doesNotMatch(trackedFiles, /\bNOTE-DEBUGS\.md\b/, 'git ls-files must not contain NOTE-DEBUGS.md in product state');
+  });
+
+  test('existing browser-act-skill-forge and pinchtab-skill-forge remain unchanged and pass checks', () => {
+    const browserActDir = path.join(REPO_ROOT, 'skills', 'browser-act-skill-forge');
+    const pinchtabDir = path.join(REPO_ROOT, 'skills', 'pinchtab-skill-forge');
+
+    assert.ok(fs.existsSync(path.join(browserActDir, 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(pinchtabDir, 'SKILL.md')));
+
+    const browserActContent = fs.readFileSync(path.join(browserActDir, 'SKILL.md'), 'utf8');
+    assert.match(browserActContent, /^name: browser-act-skill-forge$/m);
+
+    const pinchtabContent = fs.readFileSync(path.join(pinchtabDir, 'SKILL.md'), 'utf8');
+    assert.match(pinchtabContent, /^name: pinchtab-skill-forge$/m);
   });
 });
