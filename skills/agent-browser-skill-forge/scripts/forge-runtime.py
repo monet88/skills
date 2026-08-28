@@ -352,7 +352,7 @@ def sanitize_deep(obj):
                 sanitized[k] = "[REDACTED]"
             elif is_sensitive_key(k):
                 if isinstance(v, str):
-                    if v.startswith("{") and v.endswith("}"):
+                    if re.fullmatch(r"\{[a-zA-Z0-9_-]+\}", v):
                         sanitized[k] = v
                     elif v.lower().startswith("bearer "):
                         sanitized[k] = "Bearer [REDACTED]"
