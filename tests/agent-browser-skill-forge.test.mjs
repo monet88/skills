@@ -3478,3 +3478,247 @@ print(json.dumps(result))
     assert.match(pinchtabContent, /^name: pinchtab-skill-forge$/m);
   });
 });
+describe('agent-browser-skill-forge Issue #19 (Non-Interactive Execution & Refine-by-Default)', () => {
+  test('forge-runtime exec rejects interactive commands and flags (chat, --confirm-interactive, --confirm-actions)', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'interactive-rejection-'));
+    try {
+      const bootRaw = runPython(['bootstrap', '--root', root, '--task', 'interactive-test']);
+      const boot = JSON.parse(bootRaw);
+      const runId = boot.run_id;
+
+      // 1. chat command
+      assert.throws(
+        () => runPython(['exec', '--root', root, '--run-id', runId, '--', 'chat']),
+        (err) => {
+          assert.match(err.stderr || err.stdout || '', /interactive mode is blocked|'chat' is not allowed/i);
+          return true;
+        }
+      );
+
+      // 2. --confirm-interactive flag
+      assert.throws(
+        () => runPython(['exec', '--root', root, '--run-id', runId, '--', 'open', 'https://example.com', '--confirm-interactive']),
+        (err) => {
+          assert.match(err.stderr || err.stdout || '', /interactive mode is blocked|--confirm-interactive/i);
+          return true;
+        }
+      );
+
+      // 3. --confirm-actions flag
+      assert.throws(
+        () => runPython(['exec', '--root', root, '--run-id', runId, '--', 'open', 'https://example.com', '--confirm-actions']),
+        (err) => {
+          assert.match(err.stderr || err.stdout || '', /interactive mode is blocked|--confirm-actions/i);
+          return true;
+        }
+      );
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('generate-skill defaults to refining existing package, preserving unaffected components/scripts', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'refine-default-'));
+
+    try {
+      // 1. Initial skill generation with endpoint 1
+      const spec1Path = path.join(root, 'spec1.json');
+      fs.writeFileSync(spec1Path, JSON.stringify({
+        base_url: 'https://api.example.com',
+        endpoints: [
+          {
+            id: 'list-items',
+            method: 'GET',
+            path: '/api/items',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: { status: 'PASSED', tested_variations: [{ query: 'test', status: 200 }] }
+          }
+        ]
+      }), 'utf8');
+
+      const gen1Raw = runPython(['generate-skill', '--root', root, '--skill-name', 'test-service', '--endpoint-spec', spec1Path, '--capability-slug', 'list-items']);
+      const pkgDir = JSON.parse(gen1Raw).output_dir;
+
+      // Add a custom helper script in scripts/ that should be preserved during refinement
+      const customScriptPath = path.join(pkgDir, 'scripts', 'custom-helper.py');
+      fs.writeFileSync(customScriptPath, '# Custom preserved helper\nprint("preserved")\n', 'utf8');
+
+      // Verify initial state
+      const manifest1 = JSON.parse(fs.readFileSync(path.join(pkgDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifest1.endpoints.length, 1);
+      assert.equal(manifest1.endpoints[0].id, 'list-items');
+
+      // 2. Refine skill by adding endpoint 2 (create-item) without --fresh
+      const spec2Path = path.join(root, 'spec2.json');
+      fs.writeFileSync(spec2Path, JSON.stringify({
+        base_url: 'https://api.example.com',
+        endpoints: [
+          {
+            id: 'create-item',
+            method: 'POST',
+            path: '/api/items',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: { status: 'PASSED', tested_variations: [{ data: { name: 'widget' }, status: 201 }] }
+          }
+        ]
+      }), 'utf8');
+
+      const gen2Raw = runPython(['generate-skill', '--root', root, '--skill-name', 'test-service', '--endpoint-spec', spec2Path, '--capability-slug', 'create-item']);
+      const gen2 = JSON.parse(gen2Raw);
+      assert.equal(gen2.output_dir, pkgDir);
+
+      // Verify merged endpoints in manifest
+      const manifest2 = JSON.parse(fs.readFileSync(path.join(pkgDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifest2.endpoints.length, 2, 'Manifest must contain both merged endpoints');
+      const epIds = manifest2.endpoints.map(e => e.id);
+      assert.ok(epIds.includes('list-items'), 'Must preserve unaffected list-items endpoint');
+      assert.ok(epIds.includes('create-item'), 'Must include new create-item endpoint');
+
+      // Verify custom helper script is preserved
+      assert.ok(fs.existsSync(customScriptPath), 'Unaffected helper script must be preserved');
+      assert.equal(fs.readFileSync(customScriptPath, 'utf8'), '# Custom preserved helper\nprint("preserved")\n');
+
+      // Verify client.py has methods for both
+      const clientPy = fs.readFileSync(path.join(pkgDir, 'client.py'), 'utf8');
+      assert.match(clientPy, /def list_items\(/);
+      assert.match(clientPy, /def create_item\(/);
+
+      // Verify provenance records refinement
+      const prov2 = JSON.parse(fs.readFileSync(path.join(pkgDir, 'provenance.json'), 'utf8'));
+      assert.equal(prov2.refined, true, 'Provenance must record refined: true');
+      assert.equal(prov2.capabilities.length, 2);
+
+      // 3. Refine again by updating list-items endpoint in place
+      const spec3Path = path.join(root, 'spec3.json');
+      fs.writeFileSync(spec3Path, JSON.stringify({
+        base_url: 'https://api.example.com',
+        endpoints: [
+          {
+            id: 'list-items',
+            method: 'GET',
+            path: '/api/v2/items',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: { status: 'PASSED', tested_variations: [{ query: 'v2', status: 200 }] }
+          }
+        ]
+      }), 'utf8');
+
+      runPython(['generate-skill', '--root', root, '--skill-name', 'test-service', '--endpoint-spec', spec3Path, '--capability-slug', 'list-items']);
+
+      const manifest3 = JSON.parse(fs.readFileSync(path.join(pkgDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifest3.endpoints.length, 2, 'Endpoints count remains 2 after in-place update');
+      const updatedListEp = manifest3.endpoints.find(e => e.id === 'list-items');
+      assert.equal(updatedListEp.path, '/api/v2/items', 'Updated endpoint path must reflect new spec');
+      assert.ok(fs.existsSync(customScriptPath), 'Custom helper still preserved');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('generate-skill --fresh performs a clean rebuild', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'fresh-rebuild-'));
+
+    try {
+      // 1. Initial package
+      const spec1Path = path.join(root, 'spec1.json');
+      fs.writeFileSync(spec1Path, JSON.stringify({
+        base_url: 'https://api.example.com',
+        endpoints: [
+          {
+            id: 'old-endpoint',
+            method: 'GET',
+            path: '/api/old',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: { status: 'PASSED', tested_variations: [{ status: 200 }] }
+          }
+        ]
+      }), 'utf8');
+
+      const gen1Raw = runPython(['generate-skill', '--root', root, '--skill-name', 'clean-service', '--endpoint-spec', spec1Path]);
+      const pkgDir = JSON.parse(gen1Raw).output_dir;
+
+      // Add file to be wiped on fresh
+      const customScriptPath = path.join(pkgDir, 'scripts', 'old-helper.py');
+      fs.writeFileSync(customScriptPath, '# Old helper\n', 'utf8');
+
+      // 2. Run with --fresh and new spec
+      const spec2Path = path.join(root, 'spec2.json');
+      fs.writeFileSync(spec2Path, JSON.stringify({
+        base_url: 'https://api.example.com',
+        endpoints: [
+          {
+            id: 'fresh-endpoint',
+            method: 'GET',
+            path: '/api/fresh',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: { status: 'PASSED', tested_variations: [{ status: 200 }] }
+          }
+        ]
+      }), 'utf8');
+
+      const gen2Raw = runPython(['generate-skill', '--root', root, '--skill-name', 'clean-service', '--endpoint-spec', spec2Path, '--fresh']);
+      const gen2 = JSON.parse(gen2Raw);
+      assert.equal(gen2.output_dir, pkgDir);
+
+      const manifest2 = JSON.parse(fs.readFileSync(path.join(pkgDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifest2.endpoints.length, 1);
+      assert.equal(manifest2.endpoints[0].id, 'fresh-endpoint', 'Only fresh endpoint exists');
+      assert.equal(fs.existsSync(customScriptPath), false, 'Old helper script must be wiped on --fresh');
+
+      const prov2 = JSON.parse(fs.readFileSync(path.join(pkgDir, 'provenance.json'), 'utf8'));
+      assert.notEqual(prov2.refined, true, 'Clean build does not have refined: true');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('corrupted or unrecoverable existing package fails with FRESH_REQUIRED and succeeds with --fresh', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'corrupted-recovery-'));
+
+    try {
+      const pkgDir = path.join(root, '.agent-forge', 'output', 'corrupt-pkg');
+      fs.mkdirSync(pkgDir, { recursive: true });
+
+      // Create corrupted manifest and empty SKILL.md
+      fs.writeFileSync(path.join(pkgDir, 'endpoint-manifest.json'), '{ broken json', 'utf8');
+      fs.writeFileSync(path.join(pkgDir, 'SKILL.md'), 'dummy', 'utf8');
+
+      const specPath = path.join(root, 'spec.json');
+      fs.writeFileSync(specPath, JSON.stringify({
+        base_url: 'https://api.example.com',
+        path: '/api/items',
+        classification: 'DIRECT_API_VERIFIED',
+        verification: { status: 'PASSED', tested_variations: [{ status: 200 }] }
+      }), 'utf8');
+
+      // 1. Refinement fails with FRESH_REQUIRED
+      assert.throws(
+        () => runPython(['generate-skill', '--root', root, '--skill-name', 'corrupt-pkg', '--endpoint-spec', specPath]),
+        (err) => {
+          const combined = (err.stderr || '') + (err.stdout || '');
+          assert.match(combined, /FRESH_REQUIRED/);
+          return true;
+        }
+      );
+
+      // 2. Clean rebuild succeeds with --fresh
+      const genFreshRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'corrupt-pkg', '--endpoint-spec', specPath, '--fresh']);
+      const genFresh = JSON.parse(genFreshRaw);
+      assert.equal(genFresh.output_dir, pkgDir);
+
+      const manifest = JSON.parse(fs.readFileSync(path.join(pkgDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.ok(Array.isArray(manifest.endpoints));
+      assert.ok(manifest.endpoints.length >= 1);
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+});

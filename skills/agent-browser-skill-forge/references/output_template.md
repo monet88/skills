@@ -33,6 +33,13 @@ Each generated capability package must contain a `SKILL.md` entrypoint plus only
 - Keep browser dependency only for classifications that actually require browser/session state.
 - For `DIRECT_API_VERIFIED`, the steady-state runtime must be usable without launching agent-browser.
 
+## Package Refinement and Rebuild Semantics
+
+- **Refinement by Default**: Invocations of `generate-skill` against an existing skill directory refine the package rather than wiping it. Endpoints and components are merged by stable identity (`id` or `path`+`method`), preserving unaffected endpoints and helper scripts in `scripts/`. Provenance records `refined: true`.
+- **Corrupted Package Safety (`FRESH_REQUIRED`)**: If target package files are structurally corrupted or unparseable, generation fails with error code `FRESH_REQUIRED` requiring an explicit `--fresh` run.
+- **Explicit Clean Rebuild (`--fresh`)**: Passing `--fresh` performs a clean, from-scratch rebuild of the skill package directory.
+- **Non-Interactive Execution Invariant**: Forge execution is strictly non-interactive. Interactive commands and flags (`chat`, `--confirm-interactive`, `--confirm-actions`) are blocked. Human questions or confirmations route through the coordinator/host layer.
+
 ## Error Envelope and Outcome Checks
 
 Generated scripts and strategies must return structured JSON envelopes for predictable automation:

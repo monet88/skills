@@ -53,6 +53,8 @@ python <agent-browser-skill-forge-root>/scripts/forge-runtime.py exec --root "<w
 
 The wrapper always supplies the forge-owned `--config` and isolated `--session`, strips ambient `AGENT_BROWSER_*` startup overrides, and rejects command-line startup flags that could escape the trusted boundary.
 
+Forge execution is strictly non-interactive. Interactive commands and flags (`chat`, `--confirm-interactive`, `--confirm-actions`) are blocked by `forge-runtime exec`. Human questions, confirmations, or routing decisions must flow through the coordinator/host layer, never agent-browser stdin.
+
 Do not bypass this wrapper for forge-controlled exploration merely because raw `agent-browser` works. Raw invocation may auto-discover an unreviewed project config.
 
 ### Optional providers, plugins, and stealth
@@ -122,6 +124,13 @@ Every generated capability must declare its actual runtime classification:
 Observed network traffic is evidence, not proof of a reusable direct API. Keep raw evidence and any private client under `.agent-forge/`.
 
 Generated browser-dependent strategy must resolve element refs at runtime. Do not copy refs observed during exploration into reusable artifacts.
+
+### Package Refinement by Default vs Explicit Fresh Mode
+
+When generating skills into `.agent-forge/output/<skill-name>/`:
+- **Refinement by Default**: If an accepted package already exists in the target directory, `generate-skill` refines it rather than overwriting from scratch. Updated endpoints/components are merged by stable identity (`id` or `path`+`method`), unaffected endpoints and helper scripts (`scripts/`) are preserved, and derived artifacts (`client.py`, `endpoint-manifest.json`, `provenance.json`, `SKILL.md`, `README.md`) are regenerated. Provenance records `refined: true`.
+- **Corrupted Package Safety**: If an existing package directory is structurally corrupted or unrecoverable (invalid/missing `endpoint-manifest.json` or empty/missing `SKILL.md`), generation fails with error code `FRESH_REQUIRED`, instructing the operator to run with `--fresh`.
+- **Explicit Fresh Rebuild**: Pass `--fresh` to `generate-skill` to force a clean, from-scratch rebuild of the skill package directory.
 
 ---
 
