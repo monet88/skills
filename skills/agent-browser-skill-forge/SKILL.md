@@ -53,6 +53,8 @@ python <agent-browser-skill-forge-root>/scripts/forge-runtime.py exec --root "<w
 
 The wrapper always supplies the forge-owned `--config` and isolated `--session`, strips ambient `AGENT_BROWSER_*` startup overrides, and rejects command-line startup flags that could escape the trusted boundary.
 
+Forge execution is strictly non-interactive. Interactive commands and flags (`chat`, `--confirm-interactive`, `--confirm-actions`) are blocked by `forge-runtime exec`. Human questions, confirmations, or routing decisions must flow through the coordinator/host layer, never agent-browser stdin.
+
 Do not bypass this wrapper for forge-controlled exploration merely because raw `agent-browser` works. Raw invocation may auto-discover an unreviewed project config.
 
 ### Optional providers, plugins, and stealth
@@ -123,6 +125,21 @@ Observed network traffic is evidence, not proof of a reusable direct API. Keep r
 
 Generated browser-dependent strategy must resolve element refs at runtime. Do not copy refs observed during exploration into reusable artifacts.
 
+### Package Refinement by Default vs Explicit Fresh Mode
+
+When generating skills into `.agent-forge/output/<skill-name>/`:
+- **Refinement by Default**: If an accepted package already exists in the target directory, `generate-skill` refines it rather than overwriting from scratch. Updated endpoints/components are merged by stable identity (`id` or `path`+`method`), unaffected endpoints and helper scripts (`scripts/`) are preserved, and derived artifacts (`client.py`, `endpoint-manifest.json`, `provenance.json`, `SKILL.md`, `README.md`) are regenerated. Provenance records `refined: true`.
+- **Corrupted Package Safety**: If an existing package directory is structurally corrupted or unrecoverable (invalid/missing `endpoint-manifest.json` or empty/missing `SKILL.md`), generation fails with error code `FRESH_REQUIRED`, instructing the operator to run with `--fresh`.
+- **Explicit Fresh Rebuild**: Pass `--fresh` to `generate-skill` to force a clean, from-scratch rebuild of the skill package directory.
+
+
+### Verified Auth Renewal & Bounded Retry Contract
+
+Auth renewal code is generated only when backed by a verified verification receipt from an observed flow:
+- **Verification Gate**: Declarative or hand-authored `auth_renewal` metadata without a valid verification receipt is ignored/stripped during generation.
+- **Bounded Retry**: On 401/403 auth expiration triggers, generated client execution performs at most 1 renewal attempt via `_renew_auth()` and 1 request retry (`_is_retry=True`). Open-ended retry loops or unbounded retries are prohibited.
+- **Token Discovery & Persistence**: Refresh tokens are discovered from `.agent-forge/auth.json` (inside the private workspace boundary) or `API_REFRESH_TOKEN` / `REFRESH_TOKEN` environment variables. When running inside `.agent-forge/`, renewed tokens are saved back to `.agent-forge/auth.json`.
+- **Zero Secret Leakage**: All manifests, provenance records, receipts, and generated logs record only sanitized template metadata with secret values and tokens redacted.
 ---
 
 ## Delivery
