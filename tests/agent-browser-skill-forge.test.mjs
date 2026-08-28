@@ -2,12 +2,68 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, execSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
+
+function canonicalStringify(obj) {
+  if (obj === null || typeof obj !== 'object') {
+    return JSON.stringify(obj);
+  }
+  if (Array.isArray(obj)) {
+    return '[' + obj.map(canonicalStringify).join(',') + ']';
+  }
+  const keys = Object.keys(obj).sort();
+  return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalStringify(obj[k])).join(',') + '}';
+}
+
+function makeMockReceipt(options = {}) {
+  const url = options.url || 'https://example.com/api/items';
+  const method = (options.method || 'GET').toUpperCase();
+  const variations = options.variations || [{}];
+  const min_status = options.min_status ?? 200;
+  const max_status = options.max_status ?? 299;
+  const required_keys = options.required_keys || [];
+
+  const input_obj = {
+    max_status,
+    method,
+    min_status,
+    required_keys: [...required_keys].sort(),
+    url,
+    variations,
+  };
+  const input_digest = crypto.createHash('sha256').update(canonicalStringify(input_obj)).digest('hex');
+
+  const receipt_id = options.receipt_id || `rcpt_${crypto.randomBytes(8).toString('hex')}`;
+  const receipt_body = {
+    receipt_version: '1.0',
+    receipt_id,
+    run_id: options.run_id || null,
+    timestamp: new Date().toISOString(),
+    url,
+    method,
+    classification: 'DIRECT_API_VERIFIED',
+    verified: options.verified ?? true,
+    input_digest,
+    variation_count: variations.length,
+    successful_variation_count: options.successful_variation_count ?? variations.length,
+    result_digests: options.result_digests || variations.map((v) => crypto.createHash('sha256').update(canonicalStringify(v)).digest('hex')),
+    pass_assertions: {
+      status_in_range: true,
+      required_keys_present: true,
+      distinct_responses: true,
+      all_passed: true,
+      ...(options.pass_assertions || {}),
+    },
+  };
+  receipt_body.receipt_hash = crypto.createHash('sha256').update(canonicalStringify(receipt_body)).digest('hex');
+  return receipt_body;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -304,11 +360,20 @@ describe('agent-browser-skill-forge Issue #12 (Extraction Forging & Direct Clien
 
     try {
       const specFile = path.join(root, 'spec.json');
+      const directReceipt = makeMockReceipt({
+        url: `${fixture.baseUrl}/api/items`,
+        method: 'GET',
+        variations: [
+          { params: { page: 1 } },
+          { params: { page: 2 } },
+        ],
+      });
       fs.writeFileSync(specFile, JSON.stringify({
         base_url: fixture.baseUrl,
         path: '/api/items',
         method: 'GET',
         classification: 'DIRECT_API_VERIFIED',
+        receipt: directReceipt,
         site_name: 'Test Store',
         site_slug: 'test-store',
         capability_slug: 'extract-items',
@@ -948,11 +1013,17 @@ describe('agent-browser-skill-forge Issue #14 (Privacy, Manifests, Provenance, &
       fs.writeFileSync(harFile, JSON.stringify({ log: { entries: [] } }), 'utf8');
 
       const specFile = path.join(root, 'spec-with-secrets.json');
+      const secureReceipt = makeMockReceipt({
+        url: 'https://secret-api.example.com/api/v1/secure-items',
+        method: 'GET',
+        variations: [{ params: { page: 1 } }],
+      });
       fs.writeFileSync(specFile, JSON.stringify({
         base_url: 'https://secret-api.example.com',
         path: '/api/v1/secure-items',
         method: 'GET',
         classification: 'DIRECT_API_VERIFIED',
+        receipt: secureReceipt,
         site_name: 'Secret Store',
         site_slug: 'secret-store',
         capability_slug: 'secure-items',
@@ -1382,6 +1453,11 @@ print(json.dumps(res))
 
       // Case B: Endpoints with PASSED status -> all_passed must be true
       const passedSpec = path.join(root, 'passed-spec.json');
+      const passedReceipt = makeMockReceipt({
+        url: 'https://example.com/items',
+        method: 'GET',
+        variations: [{ params: { page: 1 } }],
+      });
       fs.writeFileSync(passedSpec, JSON.stringify({
         base_url: 'https://example.com',
         path: '/items',
@@ -1392,6 +1468,7 @@ print(json.dumps(res))
             method: 'GET',
             path: '/items',
             classification: 'DIRECT_API_VERIFIED',
+            receipt: passedReceipt,
             verification: {
               status: 'PASSED',
               tested_variations: [{ params: { page: 1 }, status: 200 }],
@@ -3476,5 +3553,523 @@ print(json.dumps(result))
 
     const pinchtabContent = fs.readFileSync(path.join(pinchtabDir, 'SKILL.md'), 'utf8');
     assert.match(pinchtabContent, /^name: pinchtab-skill-forge$/m);
+  });
+});
+
+describe('agent-browser-skill-forge Issue #18 (Runtime Receipts & HAR Lifecycle Gating)', () => {
+  let fixture;
+
+  test('real verify-endpoint emits and saves valid verification receipt', async () => {
+    fixture = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'verify-rcpt-'));
+
+    try {
+      const variationsFile = path.join(root, 'variations.json');
+      fs.writeFileSync(variationsFile, JSON.stringify([
+        { params: { page: 1, limit: 5 } },
+        { params: { page: 2, limit: 5 } },
+      ]), 'utf8');
+
+      const outReceiptPath = path.join(root, 'output-receipt.json');
+      const runId = 'run-verify-test-18';
+
+      const verifyRaw = runPython([
+        'verify-endpoint',
+        '--root', root,
+        '--run-id', runId,
+        '--url', `${fixture.baseUrl}/api/items`,
+        '--variations', variationsFile,
+        '--required-key', 'items',
+        '--output-receipt', outReceiptPath,
+      ]);
+
+      const verified = JSON.parse(verifyRaw);
+      assert.equal(verified.verified, true);
+      assert.equal(verified.classification, 'DIRECT_API_VERIFIED');
+      assert.ok(verified.receipt, 'stdout must include receipt object');
+
+      const rcpt = verified.receipt;
+      assert.equal(rcpt.receipt_version, '1.0');
+      assert.ok(rcpt.receipt_id.startsWith('rcpt_'));
+      assert.equal(rcpt.run_id, runId);
+      assert.equal(rcpt.url, `${fixture.baseUrl}/api/items`);
+      assert.equal(rcpt.method, 'GET');
+      assert.equal(rcpt.classification, 'DIRECT_API_VERIFIED');
+      assert.equal(rcpt.verified, true);
+      assert.equal(typeof rcpt.input_digest, 'string');
+      assert.equal(rcpt.input_digest.length, 64);
+      assert.equal(rcpt.variation_count, 2);
+      assert.equal(rcpt.successful_variation_count, 2);
+      assert.equal(rcpt.result_digests.length, 2);
+      assert.equal(rcpt.pass_assertions.status_in_range, true);
+      assert.equal(rcpt.pass_assertions.required_keys_present, true);
+      assert.equal(rcpt.pass_assertions.distinct_responses, true);
+      assert.equal(rcpt.pass_assertions.all_passed, true);
+      assert.equal(typeof rcpt.receipt_hash, 'string');
+      assert.equal(rcpt.receipt_hash.length, 64);
+
+      // Verify file persistence at --output-receipt
+      assert.ok(fs.existsSync(outReceiptPath));
+      const savedRcpt = JSON.parse(fs.readFileSync(outReceiptPath, 'utf8'));
+      assert.equal(savedRcpt.receipt_hash, rcpt.receipt_hash);
+      assert.equal(savedRcpt.receipt_id, rcpt.receipt_id);
+
+      // Verify file persistence at .agent-forge/runs/<run-id>/receipts/<receipt_id>.json
+      const runRcptPath = path.join(root, '.agent-forge', 'runs', runId, 'receipts', `${rcpt.receipt_id}.json`);
+      assert.ok(fs.existsSync(runRcptPath));
+      const savedRunRcpt = JSON.parse(fs.readFileSync(runRcptPath, 'utf8'));
+      assert.equal(savedRunRcpt.receipt_hash, rcpt.receipt_hash);
+    } finally {
+      await fixture.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('generate-skill with valid receipt creates DIRECT_API_VERIFIED / PASSED client', async () => {
+    fixture = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'gen-valid-rcpt-'));
+
+    try {
+      const variationsFile = path.join(root, 'variations.json');
+      fs.writeFileSync(variationsFile, JSON.stringify([
+        { params: { page: 1, limit: 5 } },
+        { params: { page: 2, limit: 5 } },
+      ]), 'utf8');
+
+      const runId = 'run-gen-valid';
+      const verifyRaw = runPython([
+        'verify-endpoint',
+        '--root', root,
+        '--run-id', runId,
+        '--url', `${fixture.baseUrl}/api/items`,
+        '--variations', variationsFile,
+        '--required-key', 'items',
+      ]);
+      const verified = JSON.parse(verifyRaw);
+      const rcpt = verified.receipt;
+
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: fixture.baseUrl,
+        path: '/api/items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        run_id: runId,
+        site_name: 'Valid Store',
+        receipt: rcpt,
+        required_keys: ['items'],
+        parameters: {
+          page: { type: 'integer', in: 'query', name: 'page', default: 1 },
+          limit: { type: 'integer', in: 'query', name: 'limit', default: 20 },
+        },
+        tested_variations: [
+          { params: { page: 1, limit: 5 } },
+          { params: { page: 2, limit: 5 } },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--run-id', runId,
+        '--skill-name', 'valid-direct-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const gen = JSON.parse(genRaw);
+      const outputDir = gen.output_dir;
+
+      // 1. Verify manifest
+      const manifest = JSON.parse(fs.readFileSync(path.join(outputDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifest.endpoints[0].classification, 'DIRECT_API_VERIFIED');
+      assert.equal(manifest.endpoints[0].verification.status, 'PASSED');
+      assert.equal(manifest.endpoints[0].verification.receipt_id, rcpt.receipt_id);
+      assert.equal(manifest.endpoints[0].verification.receipt_hash, rcpt.receipt_hash);
+      assert.equal(manifest.endpoints[0].verification.receipt_version, '1.0');
+
+      // 2. Verify provenance
+      const prov = JSON.parse(fs.readFileSync(path.join(outputDir, 'provenance.json'), 'utf8'));
+      assert.equal(prov.verification_summary.direct_api_count, 1);
+      assert.equal(prov.verification_summary.all_passed, true);
+      assert.equal(prov.capabilities[0].receipt_id, rcpt.receipt_id);
+      assert.equal(prov.capabilities[0].receipt_hash, rcpt.receipt_hash);
+      assert.equal(prov.capabilities[0].receipt_version, '1.0');
+
+      // 3. Validate package
+      const valRaw = runPython(['validate-package', '--package-dir', outputDir]);
+      assert.equal(JSON.parse(valRaw).valid, true);
+
+      // 4. Test client.py
+      const clientPy = path.join(outputDir, 'client.py');
+      assert.ok(fs.existsSync(clientPy));
+      const clientOut = execFileSync(PYTHON, [clientPy, '--page', '1', '--limit', '5'], { encoding: 'utf8' });
+      assert.match(clientOut, /"items"/);
+    } finally {
+      await fixture.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('hand-authored tested_variations without receipt cannot manufacture DIRECT_API_VERIFIED / PASSED (downgrades to UNVERIFIED)', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'hand-authored-no-rcpt-'));
+
+    try {
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: 'https://example.com',
+        path: '/api/items',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        site_name: 'Fake Store',
+        endpoints: [
+          {
+            id: 'fake-direct',
+            method: 'GET',
+            path: '/api/items',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: {
+              status: 'PASSED',
+              tested_variations: [
+                { params: { page: 1 }, status: 200, item_count: 5 },
+                { params: { page: 2 }, status: 200, item_count: 5 },
+              ],
+            },
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'fake-direct-skill',
+        '--endpoint-spec', specFile,
+      ]);
+      const outputDir = JSON.parse(genRaw).output_dir;
+
+      const manifest = JSON.parse(fs.readFileSync(path.join(outputDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifest.endpoints[0].verification.status, 'UNVERIFIED', 'Hand-authored tested_variations without receipt must downgrade to UNVERIFIED');
+      assert.equal(manifest.endpoints[0].verification.receipt_id, undefined);
+
+      const prov = JSON.parse(fs.readFileSync(path.join(outputDir, 'provenance.json'), 'utf8'));
+      assert.equal(prov.verification_summary.direct_api_count, 0, 'Unverified direct endpoint must not count in direct_api_count');
+      assert.equal(prov.verification_summary.all_passed, false);
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('mismatched URL/method or corrupted receipt blocks direct pass', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'rcpt-mismatch-'));
+
+    try {
+      const validReceipt = makeMockReceipt({
+        url: 'https://api.example.com/api/v1/products',
+        method: 'GET',
+        variations: [{ params: { page: 1 } }, { params: { page: 2 } }],
+      });
+
+      // Case A: Corrupted hash
+      const corruptedReceipt = { ...validReceipt, receipt_hash: '0000000000000000000000000000000000000000000000000000000000000000' };
+      const specA = path.join(root, 'spec-a.json');
+      fs.writeFileSync(specA, JSON.stringify({
+        base_url: 'https://api.example.com',
+        path: '/api/v1/products',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        receipt: corruptedReceipt,
+      }), 'utf8');
+      const genA = JSON.parse(runPython(['generate-skill', '--root', root, '--skill-name', 'corrupted-hash-skill', '--endpoint-spec', specA]));
+      const manifestA = JSON.parse(fs.readFileSync(path.join(genA.output_dir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifestA.endpoints[0].verification.status, 'UNVERIFIED');
+
+      // Case B: Mismatched URL
+      const specB = path.join(root, 'spec-b.json');
+      fs.writeFileSync(specB, JSON.stringify({
+        base_url: 'https://api.other.com',
+        path: '/api/v2/other',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        receipt: validReceipt,
+      }), 'utf8');
+      const genB = JSON.parse(runPython(['generate-skill', '--root', root, '--skill-name', 'mismatched-url-skill', '--endpoint-spec', specB]));
+      const manifestB = JSON.parse(fs.readFileSync(path.join(genB.output_dir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifestB.endpoints[0].verification.status, 'UNVERIFIED');
+
+      // Case C: Mismatched Method
+      const specC = path.join(root, 'spec-c.json');
+      fs.writeFileSync(specC, JSON.stringify({
+        base_url: 'https://api.example.com',
+        path: '/api/v1/products',
+        method: 'POST',
+        classification: 'DIRECT_API_VERIFIED',
+        receipt: validReceipt,
+      }), 'utf8');
+      const genC = JSON.parse(runPython(['generate-skill', '--root', root, '--skill-name', 'mismatched-method-skill', '--endpoint-spec', specC]));
+      const manifestC = JSON.parse(fs.readFileSync(path.join(genC.output_dir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifestC.endpoints[0].verification.status, 'UNVERIFIED');
+
+      // Case D: Mismatched Input Digest (different variations)
+      const specD = path.join(root, 'spec-d.json');
+      fs.writeFileSync(specD, JSON.stringify({
+        base_url: 'https://api.example.com',
+        path: '/api/v1/products',
+        method: 'GET',
+        classification: 'DIRECT_API_VERIFIED',
+        receipt: validReceipt,
+        tested_variations: [{ params: { search: 'different_query_variation' } }],
+      }), 'utf8');
+      const genD = JSON.parse(runPython(['generate-skill', '--root', root, '--skill-name', 'mismatched-digest-skill', '--endpoint-spec', specD]));
+      const manifestD = JSON.parse(fs.readFileSync(path.join(genD.output_dir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifestD.endpoints[0].verification.status, 'UNVERIFIED');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('multi-endpoint/hybrid validates receipts per direct endpoint', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'multi-rcpt-'));
+
+    try {
+      const ep1Receipt = makeMockReceipt({
+        url: 'https://api.example.com/api/v1/items',
+        method: 'GET',
+        variations: [{ params: { page: 1 } }],
+      });
+
+      const hybridSpec = path.join(root, 'hybrid-spec.json');
+      fs.writeFileSync(hybridSpec, JSON.stringify({
+        base_url: 'https://api.example.com',
+        classification: 'HYBRID',
+        endpoints: [
+          {
+            id: 'verified-direct',
+            method: 'GET',
+            path: '/api/v1/items',
+            classification: 'DIRECT_API_VERIFIED',
+            receipt: ep1Receipt,
+            verification: { tested_variations: [{ params: { page: 1 } }] },
+          },
+          {
+            id: 'unverified-direct',
+            method: 'GET',
+            path: '/api/v1/orders',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: { tested_variations: [{ params: { page: 1 } }] },
+          },
+          {
+            id: 'dom-action',
+            method: 'GET',
+            path: '/checkout',
+            classification: 'DOM_ONLY',
+          },
+        ],
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--skill-name', 'hybrid-rcpt-skill',
+        '--endpoint-spec', hybridSpec,
+      ]);
+      const outputDir = JSON.parse(genRaw).output_dir;
+
+      const manifest = JSON.parse(fs.readFileSync(path.join(outputDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifest.endpoints[0].verification.status, 'PASSED');
+      assert.equal(manifest.endpoints[0].verification.receipt_id, ep1Receipt.receipt_id);
+      assert.equal(manifest.endpoints[1].verification.status, 'UNVERIFIED');
+      assert.equal(manifest.endpoints[2].verification.status, 'FALLBACK');
+
+      const prov = JSON.parse(fs.readFileSync(path.join(outputDir, 'provenance.json'), 'utf8'));
+      assert.equal(prov.verification_summary.direct_api_count, 1);
+      assert.equal(prov.verification_summary.dom_only_count, 1);
+      assert.equal(prov.verification_summary.hybrid_count, 1);
+      assert.equal(prov.verification_summary.all_passed, false);
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('package validation rejects direct-PASSED without receipt provenance', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'val-reject-'));
+
+    try {
+      const badPkg = path.join(root, 'bad-pkg');
+      fs.mkdirSync(badPkg, { recursive: true });
+      fs.writeFileSync(path.join(badPkg, 'SKILL.md'), '---\nname: bad-pkg\n---\n# Bad Pkg\nClassification: `DIRECT_API_VERIFIED`\nRun python client.py\n', 'utf8');
+      fs.writeFileSync(path.join(badPkg, 'endpoint-manifest.json'), JSON.stringify({
+        endpoints: [
+          {
+            id: 'ep1',
+            method: 'GET',
+            path: '/items',
+            classification: 'DIRECT_API_VERIFIED',
+            verification: { status: 'PASSED' },
+          },
+        ],
+      }), 'utf8');
+      fs.writeFileSync(path.join(badPkg, 'provenance.json'), JSON.stringify({
+        har_sha256: null,
+        capabilities: [{ name: 'ep1', classification: 'DIRECT_API_VERIFIED', steady_state_runtime: 'python' }],
+        verification_summary: { direct_api_count: 1, all_passed: true },
+      }), 'utf8');
+
+      assert.throws(() => {
+        runPython(['validate-package', '--package-dir', badPkg]);
+      }, /without valid verification receipt reference/);
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('HAR capture start -> target flow -> stop produces finalized hash in provenance', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'har-life-'));
+
+    try {
+      const runId = 'run-har-flow-18';
+
+      // 1. har-start
+      const startRaw = runPython([
+        'har-start',
+        '--root', root,
+        '--run-id', runId,
+        '--target-flow', 'catalog-search-flow',
+      ]);
+      const started = JSON.parse(startRaw);
+      assert.equal(started.status, 'recording');
+      assert.equal(started.target_flow, 'catalog-search-flow');
+      assert.ok(started.capture_id.startsWith('cap_'));
+
+      // 2. Create mock HAR
+      const harPath = path.join(root, 'flow.har');
+      const harContent = JSON.stringify({
+        log: {
+          version: '1.2',
+          entries: [
+            {
+              request: { method: 'GET', url: 'https://example.com/api/search?q=test', headers: [] },
+              response: { status: 200, content: { mimeType: 'application/json', text: '{"results": [1,2,3]}' } },
+            },
+          ],
+        },
+      });
+      fs.writeFileSync(harPath, harContent, 'utf8');
+      const expectedSha = crypto.createHash('sha256').update(harContent).digest('hex');
+
+      // 3. har-stop
+      const stopRaw = runPython([
+        'har-stop',
+        '--root', root,
+        '--run-id', runId,
+        '--har-file', harPath,
+      ]);
+      const stopped = JSON.parse(stopRaw);
+      assert.equal(stopped.status, 'finalized');
+      assert.equal(stopped.har_sha256, expectedSha);
+      assert.equal(stopped.target_flow, 'catalog-search-flow');
+
+      // 4. har-analyze with lifecycle check
+      const analyzeRaw = runPython([
+        'har-analyze',
+        '--root', root,
+        '--run-id', runId,
+        '--har', harPath,
+      ]);
+      const analyzed = JSON.parse(analyzeRaw);
+      assert.equal(analyzed.har_sha256, expectedSha);
+      assert.equal(analyzed.candidate_count, 1);
+
+      // 5. har-inspect with lifecycle check
+      const inspectRaw = runPython([
+        'har-inspect',
+        '--root', root,
+        '--run-id', runId,
+        '--har', harPath,
+      ]);
+      const inspected = JSON.parse(inspectRaw);
+      assert.equal(inspected.count, 1);
+
+      // 6. generate-skill with lifecycle check
+      const specFile = path.join(root, 'spec.json');
+      fs.writeFileSync(specFile, JSON.stringify({
+        base_url: 'https://example.com',
+        path: '/api/search',
+        classification: 'BROWSER_SESSION_API',
+        site_name: 'Search Site',
+      }), 'utf8');
+
+      const genRaw = runPython([
+        'generate-skill',
+        '--root', root,
+        '--run-id', runId,
+        '--skill-name', 'har-search-skill',
+        '--endpoint-spec', specFile,
+        '--har-path', harPath,
+      ]);
+      const outputDir = JSON.parse(genRaw).output_dir;
+      const prov = JSON.parse(fs.readFileSync(path.join(outputDir, 'provenance.json'), 'utf8'));
+      assert.equal(prov.har_sha256, expectedSha, 'Provenance har_sha256 must match finalized HAR hash');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('failed HAR start, unfinalized stop, or hash mismatch fails HAR-derived generation', () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'har-gate-failures-'));
+
+    try {
+      const harPath = path.join(root, 'sample.har');
+      fs.writeFileSync(harPath, JSON.stringify({ log: { entries: [] } }), 'utf8');
+
+      // Case A: har-stop without har-start fails
+      assert.throws(() => {
+        runPython(['har-stop', '--root', root, '--run-id', 'no-start-run', '--har-file', harPath]);
+      }, /HAR capture was not started/);
+
+      // Case B: Unfinalized stop blocks generation and analysis
+      runPython(['har-start', '--root', root, '--run-id', 'unfinalized-run', '--target-flow', 'flow1']);
+      assert.throws(() => {
+        runPython(['har-analyze', '--root', root, '--run-id', 'unfinalized-run', '--har', harPath]);
+      }, /is not finalized/);
+      assert.throws(() => {
+        const specFile = path.join(root, 'spec-unfin.json');
+        fs.writeFileSync(specFile, JSON.stringify({ base_url: 'https://example.com', path: '/api/items', classification: 'BROWSER_SESSION_API' }), 'utf8');
+        runPython(['generate-skill', '--root', root, '--run-id', 'unfinalized-run', '--skill-name', 'unfin-skill', '--endpoint-spec', specFile, '--har-path', harPath]);
+      }, /is not finalized/);
+
+      // Case C: Hash mismatch after stop
+      runPython(['har-start', '--root', root, '--run-id', 'tampered-run', '--target-flow', 'flow2']);
+      runPython(['har-stop', '--root', root, '--run-id', 'tampered-run', '--har-file', harPath]);
+      // Mutate HAR file
+      fs.writeFileSync(harPath, JSON.stringify({ log: { entries: [{ modified: true }] } }), 'utf8');
+      assert.throws(() => {
+        runPython(['har-analyze', '--root', root, '--run-id', 'tampered-run', '--har', harPath]);
+      }, /HAR SHA-256 mismatch/);
+
+      // Case D: Pre-capture setup alone cannot satisfy target flow evidence gate
+      runPython(['har-start', '--root', root, '--run-id', 'precap-only-run', '--target-flow', 'login', '--pre-capture']);
+      const precapHar = path.join(root, 'precap.har');
+      fs.writeFileSync(precapHar, JSON.stringify({ log: { entries: [] } }), 'utf8');
+      runPython(['har-stop', '--root', root, '--run-id', 'precap-only-run', '--har-file', precapHar]);
+      assert.throws(() => {
+        runPython(['har-analyze', '--root', root, '--run-id', 'precap-only-run', '--har', precapHar]);
+      }, /lacks target-flow evidence|pre-capture setup cannot satisfy/);
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
   });
 });

@@ -387,11 +387,284 @@ def get_live_agent_browser_version(root=None):
         pass
     return "agent-browser (version unavailable)"
 
+def canonical_json(obj):
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def compute_receipt_hash(receipt_dict):
+    if not isinstance(receipt_dict, dict):
+        return None
+    body = {k: v for k, v in receipt_dict.items() if k != "receipt_hash"}
+    return hashlib.sha256(canonical_json(body).encode("utf-8")).hexdigest()
+
+
+def compute_endpoint_input_digest(url, method, variations, min_status=200, max_status=299, required_keys=None):
+    norm_vars = []
+    for v in variations or [{}]:
+        if isinstance(v, dict):
+            nv = {k: val for k, val in v.items() if k not in ("status", "response", "item_count", "error", "headers")}
+            norm_vars.append(nv if nv else v)
+        else:
+            norm_vars.append(v)
+    input_obj = {
+        "max_status": max_status if max_status is not None else 299,
+        "method": (method or "GET").upper(),
+        "min_status": min_status if min_status is not None else 200,
+        "required_keys": sorted(required_keys) if isinstance(required_keys, list) else [],
+        "url": url or "",
+        "variations": norm_vars,
+    }
+    return hashlib.sha256(canonical_json(input_obj).encode("utf-8")).hexdigest()
+
+
+def validate_verification_receipt(receipt, ep, spec, base_url):
+    if not isinstance(receipt, dict):
+        return False, "Receipt is not a dictionary"
+
+    if receipt.get("receipt_version") != "1.0":
+        return False, f"Unsupported receipt version: {receipt.get('receipt_version')}"
+
+    expected_hash = compute_receipt_hash(receipt)
+    if not expected_hash or receipt.get("receipt_hash") != expected_hash:
+        return False, f"Receipt hash mismatch: expected {expected_hash}, got {receipt.get('receipt_hash')}"
+
+    if not receipt.get("verified"):
+        return False, "Receipt verified field is not true"
+
+    if receipt.get("classification") != "DIRECT_API_VERIFIED":
+        return False, f"Receipt classification is '{receipt.get('classification')}', expected DIRECT_API_VERIFIED"
+
+    ep_method = (ep.get("method") or spec.get("method") or "GET").upper()
+    rcpt_method = (receipt.get("method") or "").upper()
+    if ep_method != rcpt_method:
+        return False, f"Method mismatch: endpoint method {ep_method} != receipt method {rcpt_method}"
+
+    ep_url = ep.get("url") or spec.get("url") or f"{base_url.rstrip('/')}/{ep.get('path', '').lstrip('/')}"
+    rcpt_url = receipt.get("url") or ""
+
+    parsed_ep = urllib.parse.urlparse(ep_url)
+    parsed_rcpt = urllib.parse.urlparse(rcpt_url)
+
+    url_match = (
+        ep_url.rstrip("/") == rcpt_url.rstrip("/")
+        or (parsed_ep.path.rstrip("/") == parsed_rcpt.path.rstrip("/") and (not parsed_ep.netloc or not parsed_rcpt.netloc or parsed_ep.netloc.lower() == parsed_rcpt.netloc.lower()))
+    )
+    if not url_match:
+        return False, f"URL mismatch: endpoint URL {ep_url} != receipt URL {rcpt_url}"
+
+    ep_vars = ep.get("variations") or spec.get("variations") or ep.get("verification", {}).get("tested_variations") or spec.get("tested_variations")
+    if ep_vars and receipt.get("input_digest"):
+        min_st = ep.get("min_status") if ep.get("min_status") is not None else spec.get("min_status", 200)
+        max_st = ep.get("max_status") if ep.get("max_status") is not None else spec.get("max_status", 299)
+        req_keys = ep.get("required_keys") or spec.get("required_keys") or []
+        expected_digest = compute_endpoint_input_digest(ep_url, ep_method, ep_vars, min_st, max_st, req_keys)
+        alt_digest = compute_endpoint_input_digest(rcpt_url, ep_method, ep_vars, min_st, max_st, req_keys)
+        if receipt.get("input_digest") != expected_digest and receipt.get("input_digest") != alt_digest:
+            matched = False
+            for cand_url in (ep_url, rcpt_url):
+                for cand_req in ([req_keys] if isinstance(req_keys, str) else [req_keys, []]):
+                    if receipt.get("input_digest") == compute_endpoint_input_digest(cand_url, ep_method, ep_vars, min_st, max_st, cand_req):
+                        matched = True
+                        break
+                if matched:
+                    break
+            if not matched:
+                return False, f"Input digest mismatch: expected {expected_digest}, got {receipt.get('input_digest')}"
+
+    return True, receipt
+
+def find_receipt_for_endpoint(ep, spec, root, args):
+    if getattr(args, "receipt", None):
+        rp = Path(args.receipt).resolve()
+        if rp.exists():
+            try:
+                return json.loads(rp.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+    candidate = (
+        ep.get("verification", {}).get("receipt")
+        or ep.get("receipt")
+        or spec.get("verification", {}).get("receipt")
+        or spec.get("receipt")
+    )
+    if isinstance(candidate, dict):
+        return candidate
+    elif isinstance(candidate, str) and candidate.endswith(".json"):
+        cp = Path(candidate).resolve()
+        if cp.exists():
+            try:
+                return json.loads(cp.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+    candidate_file = (
+        ep.get("verification", {}).get("receipt_file")
+        or ep.get("receipt_file")
+        or ep.get("receipt_path")
+        or spec.get("verification", {}).get("receipt_file")
+        or spec.get("receipt_file")
+        or spec.get("receipt_path")
+    )
+    if candidate_file:
+        cp = Path(candidate_file).resolve()
+        if cp.exists():
+            try:
+                return json.loads(cp.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+    search_dirs = []
+    if getattr(args, "receipts_dir", None):
+        search_dirs.append(Path(args.receipts_dir).resolve())
+
+    root_path = resolve_root(getattr(args, "root", None) or os.getcwd())
+    run_id = getattr(args, "run_id", None) or spec.get("run_id") or ep.get("run_id")
+    if run_id:
+        search_dirs.append(root_path / PRIVATE_DIR / "runs" / safe_token(run_id) / "receipts")
+    search_dirs.append(root_path / PRIVATE_DIR / "evidence" / "receipts")
+    search_dirs.append(root_path / PRIVATE_DIR / "receipts")
+
+    receipt_id = (
+        ep.get("verification", {}).get("receipt_id")
+        or ep.get("receipt_id")
+        or spec.get("verification", {}).get("receipt_id")
+        or spec.get("receipt_id")
+    )
+
+    for sdir in search_dirs:
+        if not sdir.exists() or not sdir.is_dir():
+            continue
+        if receipt_id:
+            rf = sdir / f"{receipt_id}.json"
+            if rf.exists():
+                try:
+                    return json.loads(rf.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+        for f in sdir.glob("*.json"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and data.get("receipt_version") == "1.0":
+                    if receipt_id and data.get("receipt_id") == receipt_id:
+                        return data
+                    ep_method = (ep.get("method") or spec.get("method") or "GET").upper()
+                    rcpt_method = (data.get("method") or "").upper()
+                    if ep_method == rcpt_method:
+                        ep_path = ep.get("path") or spec.get("path") or ""
+                        rcpt_url = data.get("url") or ""
+                        if ep_path and (ep_path in rcpt_url or urllib.parse.urlparse(rcpt_url).path == ep_path):
+                            return data
+            except Exception:
+                pass
+
+    return None
+
+
+def validate_har_lifecycle(root, run_id, har_file_path=None):
+    if not root or not run_id:
+        return None
+    root_path = resolve_root(root)
+    lifecycle_file = root_path / PRIVATE_DIR / "runs" / safe_token(run_id) / "har-lifecycle.json"
+    if not lifecycle_file.exists():
+        fail(f"HAR lifecycle record missing for run {run_id}. HAR capture must follow har-start -> flow -> har-stop lifecycle.")
+    try:
+        state = json.loads(lifecycle_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        fail(f"Corrupted HAR lifecycle record for run {run_id}: {exc}")
+
+    if state.get("status") != "finalized":
+        fail(f"HAR capture lifecycle for run {run_id} is not finalized (status: '{state.get('status')}').")
+
+    if state.get("pre_capture") and (not state.get("target_flow") or state.get("target_flow") in ("pre-capture", "setup", "login", "auth")):
+        fail(f"HAR capture lifecycle for run {run_id} lacks target-flow evidence (pre-capture setup cannot satisfy target-flow evidence gate alone).")
+
+    if har_file_path:
+        hp = Path(har_file_path).resolve()
+        if not hp.exists():
+            fail(f"HAR file does not exist: {hp}")
+        actual_hash = hashlib.sha256(hp.read_bytes()).hexdigest()
+        expected_hash = state.get("har_sha256")
+        if actual_hash != expected_hash:
+            fail(f"HAR SHA-256 mismatch for run {run_id}: expected {expected_hash}, got {actual_hash}")
+
+    return state
+
+
+def har_start(args):
+    root = resolve_root(args.root)
+    run_id = safe_token(args.run_id)
+    run_dir = root / PRIVATE_DIR / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    lifecycle_file = run_dir / "har-lifecycle.json"
+
+    capture_id = f"cap_{hashlib.sha256(f'{run_id}:{args.target_flow}:{time.time()}'.encode('utf-8')).hexdigest()[:16]}"
+    state = {
+        "status": "recording",
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "target_flow": args.target_flow,
+        "capture_id": capture_id,
+        "pre_capture": bool(args.pre_capture),
+    }
+    lifecycle_file.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(sanitize_deep(state), indent=2))
+
+
+def har_stop(args):
+    root = resolve_root(args.root)
+    run_id = safe_token(args.run_id)
+    run_dir = root / PRIVATE_DIR / "runs" / run_id
+    lifecycle_file = run_dir / "har-lifecycle.json"
+
+    if not lifecycle_file.exists():
+        fail(f"HAR capture was not started for run: {run_id}")
+    try:
+        state = json.loads(lifecycle_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        fail(f"Invalid HAR lifecycle state: {exc}")
+
+    if state.get("status") != "recording":
+        fail(f"HAR capture is not in recording state (status: {state.get('status')}) for run: {run_id}")
+
+    har_file = Path(args.har_file).resolve()
+    if not har_file.exists():
+        fail(f"HAR file does not exist: {har_file}")
+
+    content_bytes = har_file.read_bytes()
+    try:
+        json.loads(content_bytes.decode("utf-8", errors="replace"))
+    except Exception as exc:
+        fail(f"HAR file is not valid JSON: {exc}")
+
+    har_sha256 = hashlib.sha256(content_bytes).hexdigest()
+
+    saved_har = run_dir / "capture.har"
+    if har_file != saved_har:
+        try:
+            saved_har.write_bytes(content_bytes)
+        except Exception:
+            pass
+
+    state["status"] = "finalized"
+    state["finalized_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    state["har_path"] = str(saved_har)
+    state["original_har_path"] = str(har_file)
+    state["har_sha256"] = har_sha256
+
+    lifecycle_file.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(sanitize_deep(state), indent=2))
+
 
 def har_analyze(args):
     har_file = Path(args.har).resolve()
     if not har_file.exists():
         fail(f"HAR file does not exist: {har_file}")
+
+    root = getattr(args, "root", None)
+    run_id = getattr(args, "run_id", None)
+    if root and run_id:
+        validate_har_lifecycle(root, run_id, har_file)
+
     content_bytes = har_file.read_bytes()
     har_sha256 = hashlib.sha256(content_bytes).hexdigest()
     try:
@@ -453,7 +726,6 @@ def har_analyze(args):
         "candidates": candidates,
     }
     print(json.dumps(sanitize_deep(result), indent=2))
-
 
 def verify_endpoint(args):
     spec = {}
@@ -588,11 +860,78 @@ def verify_endpoint(args):
             all_passed = False
             failure_reason = "Parameter variations did not produce distinct responses"
     elif len(tested_results) == 1 and all_passed:
-        # At least one meaningful parameter variation required for DIRECT_API_VERIFIED
         all_passed = False
         failure_reason = "At least one meaningful parameter variation is required to verify direct API"
 
     classification = "DIRECT_API_VERIFIED" if (all_passed and variation_verified) else "BROWSER_SESSION_API"
+
+    input_obj = {
+        "max_status": max_status,
+        "method": method,
+        "min_status": min_status,
+        "required_keys": sorted(required_keys) if isinstance(required_keys, list) else [],
+        "url": url,
+        "variations": variations,
+    }
+    input_digest = hashlib.sha256(canonical_json(input_obj).encode("utf-8")).hexdigest()
+
+    sanitized_tested = [sanitize_deep(r) for r in tested_results]
+    result_digests = [
+        hashlib.sha256(canonical_json(r).encode("utf-8")).hexdigest()
+        for r in sanitized_tested
+    ]
+
+    successful_variation_count = sum(
+        1 for r in tested_results
+        if min_status <= (r.get("status") or 0) <= max_status
+        and (not required_keys or (isinstance(r.get("response"), dict) and all(rk in r.get("response") for rk in required_keys)))
+        and not r.get("error")
+    )
+
+    pass_assertions = {
+        "status_in_range": bool(tested_results and all(min_status <= (r.get("status") or 0) <= max_status for r in tested_results)),
+        "required_keys_present": bool(tested_results and all(all(rk in (r.get("response") or {}) for rk in required_keys) if isinstance(r.get("response"), dict) else True for r in tested_results)),
+        "distinct_responses": bool(variation_verified),
+        "all_passed": bool(all_passed and variation_verified),
+    }
+
+    run_id = getattr(args, "run_id", None) or spec.get("run_id")
+    token_basis = f"{url}:{method}:{input_digest}:{time.time()}"
+    receipt_id = f"rcpt_{hashlib.sha256(token_basis.encode('utf-8')).hexdigest()[:16]}"
+    receipt_body = {
+        "receipt_version": "1.0",
+        "receipt_id": receipt_id,
+        "run_id": run_id,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "url": sanitize_url(url),
+        "method": method,
+        "classification": classification,
+        "verified": bool(all_passed and variation_verified),
+        "input_digest": input_digest,
+        "variation_count": len(tested_results),
+        "successful_variation_count": successful_variation_count,
+        "result_digests": result_digests,
+        "pass_assertions": pass_assertions,
+    }
+    receipt_hash = hashlib.sha256(canonical_json(receipt_body).encode("utf-8")).hexdigest()
+    receipt_body["receipt_hash"] = receipt_hash
+
+    sanitized_receipt = sanitize_deep(receipt_body)
+
+    if getattr(args, "output_receipt", None):
+        out_p = Path(args.output_receipt).resolve()
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(sanitized_receipt, indent=2) + "\n", encoding="utf-8")
+
+    if getattr(args, "root", None):
+        root_path = resolve_root(args.root)
+        if run_id:
+            r_dir = root_path / PRIVATE_DIR / "runs" / safe_token(run_id) / "receipts"
+        else:
+            r_dir = root_path / PRIVATE_DIR / "evidence" / "receipts"
+        r_dir.mkdir(parents=True, exist_ok=True)
+        (r_dir / f"{receipt_id}.json").write_text(json.dumps(sanitized_receipt, indent=2) + "\n", encoding="utf-8")
+
     output = {
         "verified": all_passed and variation_verified,
         "classification": classification,
@@ -600,6 +939,7 @@ def verify_endpoint(args):
         "method": method,
         "variation_count": len(tested_results),
         "tested_variations": tested_results,
+        "receipt": sanitized_receipt,
         "reason": failure_reason if not (all_passed and variation_verified) else None,
     }
     print(json.dumps(sanitize_deep(output), indent=2))
@@ -636,18 +976,13 @@ def generate_skill(args):
     capability_name = safe_token(args.skill_name) if args.skill_name else f"{site_slug}-{capability_slug}"
     base_url = spec.get("base_url") or spec.get("url") or "https://example.com"
     endpoint_path = spec.get("path") or "/api/items"
+    run_id = getattr(args, "run_id", None) or spec.get("run_id")
 
     raw_endpoints = spec.get("endpoints")
-    spec_has_explicit_endpoints = bool(raw_endpoints)  # True when spec provides explicit endpoint IDs
+    spec_has_explicit_endpoints = bool(raw_endpoints)
     if not raw_endpoints:
-        tested_vars = spec.get("verification", {}).get("tested_variations") or spec.get("tested_variations") or []
-        has_evidence = len(tested_vars) >= 1 and any(v.get("status") in (200, 201, 204, "200", "201", "204") for v in tested_vars if isinstance(v, dict))
-        if not has_evidence and classification == "DIRECT_API_VERIFIED":
-            status = "UNVERIFIED"
-        else:
-            status = "PASSED" if (classification == "DIRECT_API_VERIFIED" and has_evidence) else "FALLBACK"
-
-        raw_endpoints = [{
+        ep_vars = spec.get("verification", {}).get("tested_variations") or spec.get("tested_variations") or []
+        ep_obj = {
             "id": capability_slug,
             "method": spec.get("method", "GET"),
             "path": endpoint_path,
@@ -659,33 +994,55 @@ def generate_skill(args):
                 "limit": {"type": "integer", "in": "query", "name": "limit", "default": 20}
             }),
             "verification": {
-                "status": status,
-                "tested_variations": tested_vars
+                "tested_variations": ep_vars
             }
-        }]
-    else:
-        for ep in raw_endpoints:
-            ep_class = ep.get("classification", classification)
-            ep_vars = ep.get("verification", {}).get("tested_variations") or ep.get("tested_variations") or spec.get("tested_variations") or []
-            has_ev = len(ep_vars) >= 1 and any(v.get("status") in (200, 201, 204, "200", "201", "204") for v in ep_vars if isinstance(v, dict))
-            if "verification" not in ep or not isinstance(ep.get("verification"), dict):
-                ep["verification"] = {}
-            if "tested_variations" not in ep["verification"]:
-                ep["verification"]["tested_variations"] = ep_vars
-            if "status" not in ep["verification"]:
-                st = "PASSED" if (ep_class == "DIRECT_API_VERIFIED" and has_ev) else ("UNVERIFIED" if ep_class == "DIRECT_API_VERIFIED" else "FALLBACK")
-                ep["verification"]["status"] = st
-            elif ep_class == "DIRECT_API_VERIFIED" and ep["verification"].get("status") == "PASSED" and not has_ev:
+        }
+        raw_endpoints = [ep_obj]
+
+    for ep in raw_endpoints:
+        ep_class = ep.get("classification", classification)
+        ep_vars = ep.get("verification", {}).get("tested_variations") or ep.get("tested_variations") or spec.get("tested_variations") or []
+        if "verification" not in ep or not isinstance(ep.get("verification"), dict):
+            ep["verification"] = {}
+        ep["verification"]["tested_variations"] = ep_vars
+
+        if ep_class == "DIRECT_API_VERIFIED":
+            found_rcpt = find_receipt_for_endpoint(ep, spec, root, args)
+            is_valid, validated_or_reason = validate_verification_receipt(found_rcpt, ep, spec, base_url) if found_rcpt else (False, "No receipt found")
+            if is_valid:
+                rcpt = validated_or_reason
+                ep["verification"]["status"] = "PASSED"
+                ep["verification"]["receipt_id"] = rcpt.get("receipt_id")
+                ep["verification"]["receipt_version"] = rcpt.get("receipt_version", "1.0")
+                ep["verification"]["receipt_hash"] = rcpt.get("receipt_hash")
+            else:
                 ep["verification"]["status"] = "UNVERIFIED"
+                ep["verification"].pop("receipt_id", None)
+                ep["verification"].pop("receipt_version", None)
+                ep["verification"].pop("receipt_hash", None)
+        else:
+            ep["verification"]["status"] = "FALLBACK"
 
     sanitized_endpoints = sanitize_deep(raw_endpoints)
 
     har_hash = spec.get("har_sha256")
-    if args.har_path:
-        hp = Path(args.har_path).resolve()
-        if hp.exists():
+    har_source = getattr(args, "har_path", None) or spec.get("har_path")
+    if har_source:
+        hp = Path(har_source).resolve()
+        if not hp.exists():
+            fail(f"HAR file does not exist: {hp}")
+        if run_id:
+            lifecycle = validate_har_lifecycle(root, run_id, hp)
+            if lifecycle:
+                har_hash = lifecycle.get("har_sha256")
+        else:
             har_hash = hashlib.sha256(hp.read_bytes()).hexdigest()
-
+    elif run_id:
+        lifecycle_file = resolve_root(root) / PRIVATE_DIR / "runs" / safe_token(run_id) / "har-lifecycle.json"
+        if lifecycle_file.exists():
+            lifecycle = validate_har_lifecycle(root, run_id, None)
+            if lifecycle:
+                har_hash = lifecycle.get("har_sha256")
     # 1. Write endpoint-manifest.json
     manifest = {
         "skill_name": capability_name,
@@ -705,9 +1062,6 @@ def generate_skill(args):
         ep.get("verification", {}).get("status") == "PASSED" for ep in sanitized_endpoints
     )
 
-    # Exploration time: preserve the exact value from spec evidence if supplied.
-    # Accept either "exploration_time_s" or "exploration_time" from spec (preserve under "exploration_time").
-    # Do NOT invent or default this field — only present when spec explicitly provides it.
     _et = spec.get("exploration_time") or spec.get("exploration_time_s")
 
     prov_capabilities = []
@@ -721,13 +1075,20 @@ def generate_skill(args):
         else:
             cap_name = capability_name
 
-        prov_capabilities.append({
+        cap_info = {
             "name": cap_name,
             "method": ep.get("method", "GET"),
             "classification": ep_c,
             "steady_state_runtime": "python" if ep_c == "DIRECT_API_VERIFIED" else "agent-browser",
             "verified_endpoint": sanitize_deep(ep.get("path", endpoint_path))
-        })
+        }
+        ep_ver = ep.get("verification", {})
+        if ep_c == "DIRECT_API_VERIFIED" and ep_ver.get("status") == "PASSED" and ep_ver.get("receipt_id"):
+            cap_info["receipt_id"] = ep_ver.get("receipt_id")
+            cap_info["receipt_version"] = ep_ver.get("receipt_version", "1.0")
+            cap_info["receipt_hash"] = ep_ver.get("receipt_hash")
+
+        prov_capabilities.append(cap_info)
 
     provenance = {
         "forge_version": "0.1.0",
@@ -1381,10 +1742,14 @@ def validate_package(args):
             m = json.loads(manifest_path.read_text(encoding="utf-8"))
             if not isinstance(m.get("endpoints"), list):
                 errors.append("endpoint-manifest.json must contain 'endpoints' array")
+            else:
+                for ep in m.get("endpoints", []):
+                    if ep.get("classification") == "DIRECT_API_VERIFIED" and ep.get("verification", {}).get("status") == "PASSED":
+                        ver = ep.get("verification", {})
+                        if not ver.get("receipt_id") or not ver.get("receipt_hash") or not ver.get("receipt_version"):
+                            errors.append(f"DIRECT_API_VERIFIED endpoint '{ep.get('id')}' is marked PASSED without valid verification receipt reference")
         except Exception as exc:
             errors.append(f"endpoint-manifest.json is invalid JSON: {exc}")
-
-    # 3. provenance.json
     prov_path = pkg_dir / "provenance.json"
     if not prov_path.exists():
         errors.append("provenance.json is missing")
@@ -2260,14 +2625,31 @@ def build_parser():
     p_exec.add_argument("command", nargs=argparse.REMAINDER)
     p_exec.set_defaults(func=execute)
 
+    p_har_start = sub.add_parser("har-start")
+    p_har_start.add_argument("--root", default=os.getcwd())
+    p_har_start.add_argument("--run-id", required=True)
+    p_har_start.add_argument("--target-flow", required=True)
+    p_har_start.add_argument("--pre-capture", action="store_true")
+    p_har_start.set_defaults(func=har_start)
+
+    p_har_stop = sub.add_parser("har-stop")
+    p_har_stop.add_argument("--root", default=os.getcwd())
+    p_har_stop.add_argument("--run-id", required=True)
+    p_har_stop.add_argument("--har-file", required=True)
+    p_har_stop.set_defaults(func=har_stop)
+
     p_har_analyze = sub.add_parser("har-analyze")
     p_har_analyze.add_argument("--har", required=True)
+    p_har_analyze.add_argument("--root", default=os.getcwd())
+    p_har_analyze.add_argument("--run-id")
     p_har_analyze.add_argument("--origin")
     p_har_analyze.add_argument("--filter")
     p_har_analyze.set_defaults(func=har_analyze)
 
     p_har_inspect = sub.add_parser("har-inspect")
     p_har_inspect.add_argument("--har", required=True, help="Path to HAR file")
+    p_har_inspect.add_argument("--root", default=os.getcwd())
+    p_har_inspect.add_argument("--run-id")
     p_har_inspect.add_argument("--methods", default=None, help="Comma-separated HTTP methods to include (default: all)")
     p_har_inspect.set_defaults(func=har_inspect)
 
@@ -2281,6 +2663,9 @@ def build_parser():
     p_ver.add_argument("--pagination-key")
     p_ver.add_argument("--min-status", type=int)
     p_ver.add_argument("--max-status", type=int)
+    p_ver.add_argument("--root")
+    p_ver.add_argument("--run-id")
+    p_ver.add_argument("--output-receipt")
     p_ver.set_defaults(func=verify_endpoint)
 
     p_gen = sub.add_parser("generate-skill")
@@ -2293,6 +2678,9 @@ def build_parser():
     p_gen.add_argument("--endpoint-spec")
     p_gen.add_argument("--har-path")
     p_gen.add_argument("--output-dir")
+    p_gen.add_argument("--run-id")
+    p_gen.add_argument("--receipt")
+    p_gen.add_argument("--receipts-dir")
     p_gen.set_defaults(func=generate_skill)
 
     p_val = sub.add_parser("validate-package")
@@ -2328,6 +2716,12 @@ def har_inspect(args):
     har_path = Path(args.har).resolve()
     if not har_path.exists():
         fail(f"HAR file does not exist: {har_path}")
+
+    root = getattr(args, "root", None)
+    run_id = getattr(args, "run_id", None)
+    if root and run_id:
+        validate_har_lifecycle(root, run_id, har_path)
+
     try:
         data = json.loads(har_path.read_text(encoding="utf-8"))
     except Exception as exc:
@@ -2380,7 +2774,6 @@ def har_inspect(args):
         })
 
     print(json.dumps(sanitize_deep({"count": len(results), "entries": results}), indent=2))
-
 
 def main():
     parser = build_parser()
