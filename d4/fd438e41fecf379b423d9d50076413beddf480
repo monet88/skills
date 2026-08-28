@@ -1,0 +1,14 @@
+skills/agent-browser-skill-forge/scripts/forge-runtime.py
+  h_17f2fa2b92da6a 355
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d4fd438e41fecf379b423d9d50076413beddf480",
+  "prompts": {},
+  "humans": {
+    "h_17f2fa2b92da6a": {
+      "author": "monet88 <minhthang421992@gmail.com>"
+    }
+  }
+}
