@@ -36,8 +36,11 @@ COORDINATOR_REGEXES = [
 ]
 
 
-def fail(message, code=2):
-    print(json.dumps({"error": True, "message": message}), file=sys.stderr)
+def fail(message, code=2, error_code=None):
+    payload = {"error": True, "message": message}
+    if error_code:
+        payload["code"] = error_code
+    print(json.dumps(payload), file=sys.stderr)
     raise SystemExit(code)
 
 
@@ -207,11 +210,14 @@ def validate_exec_args(argv):
         fail("exec requires an agent-browser command after --")
     if argv[0] == "plugin" and len(argv) > 1 and argv[1] == "add":
         fail("plugin add is not allowed inside a forge-controlled run")
+    if "chat" in argv:
+        fail("interactive mode is blocked in forge-controlled runs: 'chat' is not allowed")
     for token in argv:
         flag = token.split("=", 1)[0]
+        if flag in ("--confirm-interactive", "--confirm-actions"):
+            fail(f"interactive mode is blocked in forge-controlled runs: '{flag}' is not allowed")
         if flag in BLOCKED_STARTUP_FLAGS:
             fail(f"startup override is blocked in forge-controlled runs: {flag}")
-
 
 def execute(args):
     root = resolve_root(args.root)
@@ -945,6 +951,21 @@ def verify_endpoint(args):
     print(json.dumps(sanitize_deep(output), indent=2))
 
 
+def find_matching_endpoint_index(new_ep, existing_eps):
+    new_id = new_ep.get("id")
+    new_method = (new_ep.get("method") or "GET").upper()
+    new_path = new_ep.get("path") or ""
+
+    if new_id:
+        for idx, ep in enumerate(existing_eps):
+            if ep.get("id") == new_id:
+                return idx
+    for idx, ep in enumerate(existing_eps):
+        if (ep.get("method") or "GET").upper() == new_method and (ep.get("path") or "") == new_path:
+            return idx
+    return -1
+
+
 def generate_skill(args):
     root = resolve_root(args.root)
     allowed_output_base = (root / PRIVATE_DIR / "output").resolve()
@@ -959,10 +980,49 @@ def generate_skill(args):
         skill_slug = safe_token(args.skill_name)
         output_dir = allowed_output_base / skill_slug
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    scripts_dir = output_dir / "scripts"
-    scripts_dir.mkdir(parents=True, exist_ok=True)
+    is_refining = False
+    existing_manifest = None
+    existing_provenance = None
 
+    if output_dir.exists() and any(output_dir.iterdir()):
+        if getattr(args, "fresh", False):
+            shutil.rmtree(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            scripts_dir = output_dir / "scripts"
+            scripts_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            manifest_file = output_dir / "endpoint-manifest.json"
+            skill_md_file = output_dir / "SKILL.md"
+            if not manifest_file.exists() or not skill_md_file.exists():
+                fail("Existing package is corrupted or unrecoverable; run with --fresh to perform a clean rebuild", error_code="FRESH_REQUIRED")
+            try:
+                existing_manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+                if not isinstance(existing_manifest, dict) or not isinstance(existing_manifest.get("endpoints"), list):
+                    fail("Existing package endpoint-manifest.json is invalid; run with --fresh to perform a clean rebuild", error_code="FRESH_REQUIRED")
+            except Exception:
+                fail("Existing package endpoint-manifest.json cannot be parsed; run with --fresh to perform a clean rebuild", error_code="FRESH_REQUIRED")
+
+            try:
+                skill_md_text = skill_md_file.read_text(encoding="utf-8")
+                if not skill_md_text.strip():
+                    fail("Existing package SKILL.md is empty; run with --fresh to perform a clean rebuild", error_code="FRESH_REQUIRED")
+            except Exception:
+                fail("Existing package SKILL.md cannot be read; run with --fresh to perform a clean rebuild", error_code="FRESH_REQUIRED")
+
+            prov_file = output_dir / "provenance.json"
+            if prov_file.exists():
+                try:
+                    existing_provenance = json.loads(prov_file.read_text(encoding="utf-8"))
+                except Exception:
+                    existing_provenance = None
+
+            is_refining = True
+            scripts_dir = output_dir / "scripts"
+            scripts_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        scripts_dir = output_dir / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
     spec = {}
     if args.endpoint_spec:
         spec_path = Path(args.endpoint_spec).resolve()
@@ -1024,7 +1084,15 @@ def generate_skill(args):
             ep["verification"]["status"] = "FALLBACK"
 
     sanitized_endpoints = sanitize_deep(raw_endpoints)
-
+    if is_refining and existing_manifest:
+        merged_endpoints = list(existing_manifest.get("endpoints", []))
+        for new_ep in sanitized_endpoints:
+            match_idx = find_matching_endpoint_index(new_ep, merged_endpoints)
+            if match_idx >= 0:
+                merged_endpoints[match_idx] = new_ep
+            else:
+                merged_endpoints.append(new_ep)
+        sanitized_endpoints = merged_endpoints
     har_hash = spec.get("har_sha256")
     har_source = getattr(args, "har_path", None) or spec.get("har_path")
     if har_source:
@@ -1105,8 +1173,12 @@ def generate_skill(args):
             "all_passed": all_passed
         }
     }
+    if is_refining:
+        provenance["refined"] = True
     if _et is not None:
         provenance["exploration_time"] = _et
+    elif is_refining and existing_provenance and "exploration_time" in existing_provenance:
+        provenance["exploration_time"] = existing_provenance["exploration_time"]
     (output_dir / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
 
     # 3. Models generation (models.py) when schema is present
@@ -2681,6 +2753,7 @@ def build_parser():
     p_gen.add_argument("--run-id")
     p_gen.add_argument("--receipt")
     p_gen.add_argument("--receipts-dir")
+    p_gen.add_argument("--fresh", action="store_true", default=False, help="Perform clean rebuild instead of refining existing package")
     p_gen.set_defaults(func=generate_skill)
 
     p_val = sub.add_parser("validate-package")

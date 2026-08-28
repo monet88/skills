@@ -34,6 +34,17 @@ python <skill-root>/scripts/forge-runtime.py exec --root "<workspace-root>" --ru
 ```
 
 Never invoke raw `agent-browser` for forge-controlled exploration. The wrapper owns the trusted config, strips ambient overrides, and enforces the isolated named session.
+### Non-Interactive Execution Contract
+
+Forge execution is strictly non-interactive. Interactive commands (`chat`) and confirmation flags (`--confirm-interactive`, `--confirm-actions`) are rejected by `forge-runtime exec`. Human decisions, questions, or confirmations route through the coordinator/host layer, never agent-browser stdin.
+
+### Refinement by Default vs Explicit Fresh Mode
+
+When generating or updating operation capabilities with `generate-skill`:
+- Existing packages in `.agent-forge/output/<skill-name>/` are refined by default, merging updated endpoints by stable identity (`id` or `path`+`method`) and preserving unaffected endpoints and helper scripts.
+- Corrupted packages trigger `FRESH_REQUIRED` error.
+- Pass `--fresh` for an explicit clean rebuild.
+
 
 ### Ephemeral Ref Discipline
 
