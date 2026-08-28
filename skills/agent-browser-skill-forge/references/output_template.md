@@ -300,13 +300,6 @@ class APIClient:
         except Exception as exc:
             return {"error": True, "code": "REQUEST_FAILED", "message": "HTTP request failed due to client connection error"}
 
-    def {operation_name}(self, **kwargs):
-        # Render path, query, and body arguments from the verified endpoint manifest.
-        path = "{endpoint_path}"
-        params = {query_params}
-        data = {body_data}
-        return self._request(path, params=params, data=data, method="{http_method}")
-
 
 def main():
     parser = argparse.ArgumentParser(description="{capability_name} standalone client")
@@ -327,15 +320,63 @@ if __name__ == "__main__":
 Generation rules for `client.py`:
 - Emit one method per `DIRECT_API_VERIFIED` endpoint, including direct components inside `HYBRID` packages.
 - Derive method names, HTTP methods, path/query/body parameters, and CLI flags from verified endpoint metadata; do not hard-code a task-specific operation.
-- For explicit endpoint arrays, do not invent an `extract_items` operation. A compatibility alias is allowed only for the intentional flat-spec legacy path.
 - File-based zero-setup auth discovery is allowed only when `client.py` itself is inside a `.agent-forge` ancestor. Exported clients outside that private boundary must use explicit or environment-provided auth.
 
 
 ### Verified Auth Renewal & Bounded Retry Template
 
-When `auth_renewal` is backed by a verified receipt, `client.py` includes `_renew_auth(self)` with bounded single-retry semantics:
+When `auth_renewal` is backed by a verified receipt, `client.py` is generated from a renewal-enabled client. It extends the base template above with the following methods and a modified 401/403 branch; the base template's `__init__`, `_discover_auth`, and `_request` are REPLACED by the versions shown here (never by a mix of both).
+
+Replacement/extensions for `client.py` when `auth_renewal` is present:
 
 ```python
+class APIClient:
+    def __init__(self, base_url=BASE_URL, auth_token=None, refresh_token=None):
+        self.base_url = base_url.rstrip("/")
+        self.auth_token = auth_token or os.environ.get("API_AUTH_TOKEN")
+        self.refresh_token = refresh_token or os.environ.get("API_REFRESH_TOKEN") or os.environ.get("REFRESH_TOKEN")
+        if not self.auth_token or not self.refresh_token:
+            self._discover_auth()
+
+    def _discover_auth(self):
+        client_path = Path(__file__).resolve()
+        for ancestor in client_path.parents:
+            if ancestor.name == ".agent-forge":
+                auth_file = ancestor / "auth.json"
+                if auth_file.exists():
+                    try:
+                        auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+                        if not self.auth_token:
+                            token = auth_data.get("token") or auth_data.get("auth_token")
+                            if token:
+                                self.auth_token = token
+                        if not self.refresh_token:
+                            rt = auth_data.get("refresh_token")
+                            if rt:
+                                self.refresh_token = rt
+                    except Exception:
+                        pass
+                return
+
+    def _save_auth(self, new_token):
+        client_path = Path(__file__).resolve()
+        for ancestor in client_path.parents:
+            if ancestor.name == ".agent-forge":
+                auth_file = ancestor / "auth.json"
+                try:
+                    auth_data = {}
+                    if auth_file.exists():
+                        try:
+                            auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+                        except Exception:
+                            auth_data = {}
+                    auth_data["token"] = new_token
+                    auth_data["auth_token"] = new_token
+                    auth_file.write_text(json.dumps(auth_data, indent=2) + "\n", encoding="utf-8")
+                except Exception:
+                    pass
+                return
+
     def _renew_auth(self):
         """Renew authentication using the verified renewal endpoint.
         Bounded to a single renewal attempt."""
@@ -343,11 +384,76 @@ When `auth_renewal` is backed by a verified receipt, `client.py` includes `_rene
             self._discover_auth()
         if not self.refresh_token:
             return False
-        # Call renewal endpoint and update self.auth_token + .agent-forge/auth.json
-        ...
+
+        renewal_url = f"{self.base_url}/{renewal_path.lstrip('/')}"
+        headers = {renewal_headers}
+        body_template = {renewal_body_template}
+        body = {}
+        if isinstance(body_template, dict):
+            for k, v in body_template.items():
+                if isinstance(v, str) and "{refresh_token}" in v:
+                    body[k] = v.replace("{refresh_token}", str(self.refresh_token))
+                else:
+                    body[k] = v
+        else:
+            body = {"refresh_token": str(self.refresh_token)}
+
+        try:
+            encoded_data = json.dumps(body).encode("utf-8")
+            req = urllib.request.Request(renewal_url, data=encoded_data, headers=headers, method="{renewal_method}")
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode("utf-8")
+                data = json.loads(raw)
+                new_token = data.get("{source_field}")
+                if new_token:
+                    self.auth_token = new_token
+                    self._save_auth(new_token)
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def _request(self, path, params=None, data=None, method="GET", _is_retry=False):
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        if params:
+            clean_params = {k: v for k, v in params.items() if v is not None}
+            if clean_params:
+                url += f"?{urllib.parse.urlencode(clean_params)}"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json, text/plain, */*",
+        }
+        if self.auth_token:
+            target_hdr = "{target_header}"
+            target_fmt = "{target_format}"
+            headers[target_hdr] = target_fmt.replace("{token}", self.auth_token)
+
+        encoded_data = json.dumps(data).encode("utf-8") if data else None
+        if encoded_data:
+            headers["Content-Type"] = "application/json"
+
+        req = urllib.request.Request(url, data=encoded_data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode("utf-8")
+                return json.loads(raw)
+        except urllib.error.HTTPError as exc:
+            if exc.code in {trigger_statuses}:
+                if not _is_retry:
+                    if self._renew_auth():
+                        return self._request(path, params=params, data=data, method=method, _is_retry=True)
+                    return {"error": True, "code": "AUTH_EXPIRED", "message": "Authentication token expired and renewal failed"}
+                return {"error": True, "code": "AUTH_EXPIRED", "message": "Authentication token expired and renewal failed"}
+            return {"error": True, "code": f"HTTP_{exc.code}", "message": f"HTTP request failed with status {exc.code}"}
+        except Exception as exc:
+            return {"error": True, "code": "REQUEST_FAILED", "message": "HTTP request failed due to client connection error"}
 ```
 
-On 401/403 triggers, `_request(..., _is_retry=False)` invokes `self._renew_auth()` and retries once with `_is_retry=True`. If the retry or renewal fails, it returns `{"error": True, "code": "AUTH_EXPIRED", "message": "Authentication token expired and renewal failed"}`.
+Notes:
+- If no `.agent-forge` ancestor exists, the client performs no file-based discovery; tokens must be passed explicitly or via environment variables.
+- On 401/403 triggers, `_request(..., _is_retry=False)` invokes `self._renew_auth()` and retries once with `_is_retry=True`. If the retry or renewal fails, it returns `{"error": True, "code": "AUTH_EXPIRED", "message": "Authentication token expired and renewal failed"}`.
+- Client without `auth_renewal` MUST use the base template unchanged; it never references `refresh_token` or `_renew_auth`.
 
 #### Manifest & Provenance Schema (`auth_renewal`)
 

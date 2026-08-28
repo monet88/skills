@@ -212,11 +212,23 @@ class StoreHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/auth/refresh":
-            length = int(self.headers.get("content-length", 0))
+            raw_length = self.headers.get("content-length", "0") or "0"
+            try:
+                length = int(raw_length)
+            except ValueError:
+                length = -1
+            if length < 0:
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "invalid_content_length"}).encode("utf-8"))
+                return
             body_bytes = self.rfile.read(length) if length > 0 else b""
             try:
                 data = json.loads(body_bytes.decode("utf-8"))
             except Exception:
+                data = {}
+            if not isinstance(data, dict):
                 data = {}
 
             refresh_token = data.get("refresh_token")

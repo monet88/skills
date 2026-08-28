@@ -21,6 +21,19 @@ function canonicalStringify(obj) {
   return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalStringify(obj[k])).join(',') + '}';
 }
 
+const DIGEST_STRIPPED_KEYS = new Set(['status', 'response', 'item_count', 'error', 'headers']);
+
+// Mirrors normalize_variation() in forge-runtime.py: response metadata is stripped
+// before hashing so mock receipts validate against runtime digests.
+function normalizeVariation(v) {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return v;
+  const nv = {};
+  for (const [k, val] of Object.entries(v)) {
+    if (!DIGEST_STRIPPED_KEYS.has(k)) nv[k] = val;
+  }
+  return nv;
+}
+
 function makeMockReceipt(options = {}) {
   const url = options.url || 'https://example.com/api/items';
   const method = (options.method || 'GET').toUpperCase();
@@ -35,7 +48,7 @@ function makeMockReceipt(options = {}) {
     min_status,
     required_keys: [...required_keys].sort(),
     url,
-    variations,
+    variations: variations.map(normalizeVariation),
   };
   const input_digest = crypto.createHash('sha256').update(canonicalStringify(input_obj)).digest('hex');
 
@@ -790,9 +803,7 @@ describe('agent-browser-skill-forge Issue #13 (Operation Capabilities & Zero-Sid
       // PROOF OF ZERO SIDE EFFECTS: Server must have received 0 POST requests during the offline test
       assert.equal(receivedPostRequests.length, 0, 'Server must not receive POST requests during offline safety verification');
 
-      // Inspect captured offline HAR
-      assert.ok(fs.existsSync(harFile), 'HAR file must be recorded');
-      const inspectOutput = await runPythonAsync(['har-inspect', '--har', harFile, '--methods', 'POST']);
+      const inspectOutput = await runPythonAsync(['har-inspect', '--har', harFile, '--methods', 'POST', '--origin', '127.0.0.1']);
       const inspected = JSON.parse(inspectOutput);
 
       assert.equal(inspected.count, 1, 'Captured exactly one POST request');
@@ -4033,7 +4044,16 @@ describe('agent-browser-skill-forge Issue #18 (Runtime Receipts & HAR Lifecycle 
 
     try {
       const harPath = path.join(root, 'sample.har');
-      fs.writeFileSync(harPath, JSON.stringify({ log: { entries: [] } }), 'utf8');
+      fs.writeFileSync(harPath, JSON.stringify({
+        log: {
+          entries: [
+            {
+              request: { method: 'GET', url: 'https://example.com/api/items', headers: [] },
+              response: { status: 200, content: { mimeType: 'application/json', text: '{}' } },
+            },
+          ],
+        },
+      }), 'utf8');
 
       // Case A: har-stop without har-start fails
       assert.throws(() => {

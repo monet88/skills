@@ -408,14 +408,17 @@ def compute_receipt_hash(receipt_dict):
     return hashlib.sha256(canonical_json(body).encode("utf-8")).hexdigest()
 
 
+def normalize_variation(v):
+    """Strip response metadata from a variation, keeping only request-affecting input.
+    All digest computations (verify-endpoint, receipt validation, test fixtures) MUST
+    route through this function so both paths hash the same normalized form."""
+    if not isinstance(v, dict):
+        return v
+    return {k: val for k, val in v.items() if k not in ("status", "response", "item_count", "error", "headers")}
+
+
 def compute_endpoint_input_digest(url, method, variations, min_status=200, max_status=299, required_keys=None):
-    norm_vars = []
-    for v in variations or [{}]:
-        if isinstance(v, dict):
-            nv = {k: val for k, val in v.items() if k not in ("status", "response", "item_count", "error", "headers")}
-            norm_vars.append(nv if nv else v)
-        else:
-            norm_vars.append(v)
+    norm_vars = [normalize_variation(v) for v in (variations or [{}])]
     input_obj = {
         "max_status": max_status if max_status is not None else 299,
         "method": (method or "GET").upper(),
@@ -726,21 +729,42 @@ def har_stop(args):
     except Exception as exc:
         fail(f"HAR file is not valid JSON: {exc}")
 
+    target_flow = state.get("target_flow")
+    if not target_flow:
+        fail("HAR stop rejected: lifecycle has no target-flow evidence. har-start must declare a concrete target flow.")
+
+    # Evidence gate: a non-pre-capture finalize must contain observable flow traffic.
+    # Pre-capture (setup) recordings are exempt here; validate_har_lifecycle enforces
+    # the target-flow evidence gate for those at analyze time, where stale pre-capture
+    # setups cannot satisfy it on their own.
+    if not state.get("pre_capture"):
+        try:
+            har_data = json.loads(content_bytes.decode("utf-8", errors="replace"))
+            entries = har_data.get("log", {}).get("entries", []) if isinstance(har_data, dict) else []
+        except Exception:
+            entries = []
+        if not entries:
+            fail("HAR stop rejected: capture contains no request entries; stop cannot evidence the target flow. Re-run the flow with agent-browser capture enabled and retry har-stop.")
+
     har_sha256 = hashlib.sha256(content_bytes).hexdigest()
 
     saved_har = run_dir / "capture.har"
     if har_file != saved_har:
         try:
             saved_har.write_bytes(content_bytes)
-        except Exception:
-            pass
+        except Exception as exc:
+            fail(f"Failed to persist durable capture.har for run {run_id}: {exc}. Lifecycle stays in recording state; fix the error and retry har-stop.")
 
+    # Bind the finalized lifecycle to this run-owned capture so downstream validation
+    # can prove the analyzed HAR is the one this stop produced.
+    capture_id = state.get("capture_id") or f"cap_{hashlib.sha256(f'{run_id}:{target_flow}:{time.time()}'.encode('utf-8')).hexdigest()[:16]}"
+    state["capture_id"] = capture_id
+    state["capture_sha256"] = har_sha256
     state["status"] = "finalized"
     state["finalized_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     state["har_path"] = str(saved_har)
     state["original_har_path"] = str(har_file)
     state["har_sha256"] = har_sha256
-
     lifecycle_file.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(sanitize_deep(state), indent=2))
 
@@ -954,16 +978,7 @@ def verify_endpoint(args):
         failure_reason = "At least one meaningful parameter variation is required to verify direct API"
 
     classification = "DIRECT_API_VERIFIED" if (all_passed and variation_verified) else "BROWSER_SESSION_API"
-
-    input_obj = {
-        "max_status": max_status,
-        "method": method,
-        "min_status": min_status,
-        "required_keys": sorted(required_keys) if isinstance(required_keys, list) else [],
-        "url": url,
-        "variations": variations,
-    }
-    input_digest = hashlib.sha256(canonical_json(input_obj).encode("utf-8")).hexdigest()
+    input_digest = compute_endpoint_input_digest(url, method, variations, min_status, max_status, required_keys)
 
     sanitized_tested = [sanitize_deep(r) for r in tested_results]
     result_digests = [
@@ -2963,6 +2978,7 @@ def build_parser():
     p_har_inspect.add_argument("--root", default=os.getcwd())
     p_har_inspect.add_argument("--run-id")
     p_har_inspect.add_argument("--methods", default=None, help="Comma-separated HTTP methods to include (default: all)")
+    p_har_inspect.add_argument("--origin", default=None, help="Only include entries whose URL netloc contains this origin substring (e.g. 127.0.0.1)")
     p_har_inspect.set_defaults(func=har_inspect)
 
     p_ver = sub.add_parser("verify-endpoint")
@@ -3043,11 +3059,16 @@ def har_inspect(args):
     entries = data.get("log", {}).get("entries", [])
     results = []
     methods = {m.strip().upper() for m in args.methods.split(",")} if args.methods else None
+    origin_filter = (args.origin or "").lower()
 
     for entry in entries:
         req = entry.get("request", {})
         method = req.get("method", "GET").upper()
         if methods and method not in methods:
+            continue
+
+        parsed_url = urllib.parse.urlparse(req.get("url", ""))
+        if origin_filter and origin_filter not in parsed_url.netloc.lower():
             continue
 
         post_data = req.get("postData", {})
@@ -3087,6 +3108,7 @@ def har_inspect(args):
         })
 
     print(json.dumps(sanitize_deep({"count": len(results), "entries": results}), indent=2))
+
 
 def main():
     parser = build_parser()
