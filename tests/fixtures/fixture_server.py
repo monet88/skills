@@ -158,12 +158,98 @@ class StoreHandler(http.server.SimpleHTTPRequestHandler):
                 ).encode("utf-8")
             )
             return
+        if parsed.path == "/api/protected-data":
+            auth = self.headers.get("Authorization") or self.headers.get("authorization")
+            token = None
+            if auth and auth.startswith("Bearer "):
+                token = auth[7:].strip()
+            elif auth:
+                token = auth.strip()
 
+            if not token or token in ("initial-token", "expired-token"):
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "error": "token_expired",
+                        }
+                    ).encode("utf-8")
+                )
+                return
+
+            if token == "renewed-token-123":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "data": ["item1", "item2"],
+                            "renewed": True,
+                        }
+                    ).encode("utf-8")
+                )
+                return
+
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(
+                json.dumps(
+                    {
+                        "error": "unauthorized",
+                    }
+                ).encode("utf-8")
+            )
+            return
 
         self.send_response(404)
         self.end_headers()
         self.wfile.write(b"Not Found")
 
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/auth/refresh":
+            length = int(self.headers.get("content-length", 0))
+            body_bytes = self.rfile.read(length) if length > 0 else b""
+            try:
+                data = json.loads(body_bytes.decode("utf-8"))
+            except Exception:
+                data = {}
+
+            refresh_token = data.get("refresh_token")
+            if refresh_token == "valid-refresh-token":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "access_token": "renewed-token-123",
+                            "token_type": "Bearer",
+                            "expires_in": 3600,
+                        }
+                    ).encode("utf-8")
+                )
+                return
+
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(
+                json.dumps(
+                    {
+                        "error": "invalid_refresh_token",
+                    }
+                ).encode("utf-8")
+            )
+            return
+
+        self.send_response(404)
+        self.end_headers()
+        self.wfile.write(b"Not Found")
 
 def main():
     server = socketserver.TCPServer(("127.0.0.1", 0), StoreHandler)

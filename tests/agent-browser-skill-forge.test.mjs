@@ -4318,3 +4318,387 @@ describe('agent-browser-skill-forge Issue #19 (Non-Interactive Execution & Refin
     }
   });
 });
+
+describe('agent-browser-skill-forge Issue #20 (Bounded Auth Renewal & Observed Flows)', () => {
+  test('verified refresh flow renews token upon 401, retries once, and successfully receives 200 data', async () => {
+    const server = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'auth-renewal-verified-'));
+
+    try {
+      const dataReceipt = makeMockReceipt({
+        url: `${server.baseUrl}/api/protected-data`,
+        method: 'GET',
+        variations: [{ status: 200 }],
+      });
+      const refreshReceipt = makeMockReceipt({
+        url: `${server.baseUrl}/api/auth/refresh`,
+        method: 'POST',
+        variations: [{ status: 200 }],
+      });
+
+      const receiptsDir = path.join(root, '.agent-forge', 'evidence', 'receipts');
+      fs.mkdirSync(receiptsDir, { recursive: true });
+      fs.writeFileSync(path.join(receiptsDir, `${dataReceipt.receipt_id}.json`), JSON.stringify(dataReceipt), 'utf8');
+      fs.writeFileSync(path.join(receiptsDir, `${refreshReceipt.receipt_id}.json`), JSON.stringify(refreshReceipt), 'utf8');
+
+      // Initial auth with expired/initial token and valid refresh token
+      fs.writeFileSync(path.join(root, '.agent-forge', 'auth.json'), JSON.stringify({
+        token: 'initial-token',
+        refresh_token: 'valid-refresh-token',
+      }), 'utf8');
+
+      const specPath = path.join(root, 'spec.json');
+      fs.writeFileSync(specPath, JSON.stringify({
+        base_url: server.baseUrl,
+        endpoints: [
+          {
+            id: 'get-protected-data',
+            method: 'GET',
+            path: '/api/protected-data',
+            classification: 'DIRECT_API_VERIFIED',
+            receipt_id: dataReceipt.receipt_id,
+            verification: { status: 'PASSED', tested_variations: [{ status: 200 }] },
+          }
+        ],
+        auth_renewal: {
+          type: 'refresh_endpoint',
+          trigger_statuses: [401, 403],
+          endpoint: {
+            path: '/api/auth/refresh',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body_template: { refresh_token: '{refresh_token}' }
+          },
+          token_mapping: {
+            source_field: 'access_token',
+            target_header: 'Authorization',
+            target_format: 'Bearer {token}'
+          },
+          receipt_id: refreshReceipt.receipt_id,
+        }
+      }), 'utf8');
+
+      const genRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'protected-client', '--endpoint-spec', specPath]);
+      const gen = JSON.parse(genRaw);
+      const pkgDir = gen.output_dir;
+
+      const clientPyPath = path.join(pkgDir, 'client.py');
+      assert.ok(fs.existsSync(clientPyPath));
+      const clientContent = fs.readFileSync(clientPyPath, 'utf8');
+      assert.ok(clientContent.includes('def _renew_auth(self)'));
+      assert.ok(clientContent.includes('_is_retry'));
+
+      // Run client.py via python script
+      const runClientScript = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(pkgDir)})
+from client import APIClient
+client = APIClient()
+res = client.get_protected_data()
+print(json.dumps(res))
+`;
+      const clientResultRaw = execFileSync(PYTHON, ['-c', runClientScript], { encoding: 'utf8', cwd: pkgDir });
+      const clientResult = JSON.parse(clientResultRaw);
+      assert.equal(clientResult.renewed, true);
+      assert.deepEqual(clientResult.data, ['item1', 'item2']);
+
+      // Check that auth.json was updated with renewed token
+      const updatedAuth = JSON.parse(fs.readFileSync(path.join(root, '.agent-forge', 'auth.json'), 'utf8'));
+      assert.equal(updatedAuth.token, 'renewed-token-123');
+    } finally {
+      await server.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('expired auth without verified renewal returns AUTH_EXPIRED without inventing renewal logic', async () => {
+    const server = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'no-renewal-'));
+
+    try {
+      const dataReceipt = makeMockReceipt({
+        url: `${server.baseUrl}/api/protected-data`,
+        method: 'GET',
+        variations: [{ status: 200 }],
+      });
+      const receiptsDir = path.join(root, '.agent-forge', 'evidence', 'receipts');
+      fs.mkdirSync(receiptsDir, { recursive: true });
+      fs.writeFileSync(path.join(receiptsDir, `${dataReceipt.receipt_id}.json`), JSON.stringify(dataReceipt), 'utf8');
+
+      fs.writeFileSync(path.join(root, '.agent-forge', 'auth.json'), JSON.stringify({
+        token: 'expired-token',
+      }), 'utf8');
+
+      const specPath = path.join(root, 'spec.json');
+      fs.writeFileSync(specPath, JSON.stringify({
+        base_url: server.baseUrl,
+        endpoints: [
+          {
+            id: 'get-protected-data',
+            method: 'GET',
+            path: '/api/protected-data',
+            classification: 'DIRECT_API_VERIFIED',
+            receipt_id: dataReceipt.receipt_id,
+            verification: { status: 'PASSED', tested_variations: [{ status: 200 }] },
+          }
+        ]
+      }), 'utf8');
+
+      const genRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'unrenewed-client', '--endpoint-spec', specPath]);
+      const gen = JSON.parse(genRaw);
+      const pkgDir = gen.output_dir;
+
+      const clientContent = fs.readFileSync(path.join(pkgDir, 'client.py'), 'utf8');
+      assert.ok(!clientContent.includes('def _renew_auth(self)'), 'client.py must not contain _renew_auth');
+
+      const runClientScript = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(pkgDir)})
+from client import APIClient
+client = APIClient()
+res = client.get_protected_data()
+print(json.dumps(res))
+`;
+      const clientResultRaw = execFileSync(PYTHON, ['-c', runClientScript], { encoding: 'utf8', cwd: pkgDir });
+      const clientResult = JSON.parse(clientResultRaw);
+      assert.equal(clientResult.error, true);
+      assert.equal(clientResult.code, 'AUTH_EXPIRED');
+      assert.match(clientResult.message, /HTTP 401/);
+    } finally {
+      await server.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('declarative renewal without valid receipt is rejected / ignored during generation', async () => {
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'unverified-renewal-'));
+
+    try {
+      const dataReceipt = makeMockReceipt({
+        url: 'https://api.example.com/api/data',
+        method: 'GET',
+        variations: [{ status: 200 }],
+      });
+      const receiptsDir = path.join(root, '.agent-forge', 'evidence', 'receipts');
+      fs.mkdirSync(receiptsDir, { recursive: true });
+      fs.writeFileSync(path.join(receiptsDir, `${dataReceipt.receipt_id}.json`), JSON.stringify(dataReceipt), 'utf8');
+
+      const specPath = path.join(root, 'spec.json');
+      fs.writeFileSync(specPath, JSON.stringify({
+        base_url: 'https://api.example.com',
+        endpoints: [
+          {
+            id: 'get-data',
+            method: 'GET',
+            path: '/api/data',
+            classification: 'DIRECT_API_VERIFIED',
+            receipt_id: dataReceipt.receipt_id,
+            verification: { status: 'PASSED', tested_variations: [{ status: 200 }] },
+          }
+        ],
+        auth_renewal: {
+          type: 'refresh_endpoint',
+          trigger_statuses: [401, 403],
+          endpoint: {
+            path: '/api/auth/refresh',
+            method: 'POST',
+            body_template: { refresh_token: '{refresh_token}' }
+          },
+          // Fake hand-authored receipt with wrong hash / non-existent receipt
+          receipt_id: 'rcpt_nonexistent_12345',
+        }
+      }), 'utf8');
+
+      const genRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'hand-authored-service', '--endpoint-spec', specPath]);
+      const gen = JSON.parse(genRaw);
+      const pkgDir = gen.output_dir;
+
+      const manifest = JSON.parse(fs.readFileSync(path.join(pkgDir, 'endpoint-manifest.json'), 'utf8'));
+      assert.equal(manifest.auth_renewal, undefined, 'Manifest must not have unverified auth_renewal');
+
+      const provenance = JSON.parse(fs.readFileSync(path.join(pkgDir, 'provenance.json'), 'utf8'));
+      assert.equal(provenance.auth_renewal, undefined, 'Provenance must not have unverified auth_renewal');
+
+      const clientContent = fs.readFileSync(path.join(pkgDir, 'client.py'), 'utf8');
+      assert.ok(!clientContent.includes('def _renew_auth(self)'), 'client.py must not have _renew_auth');
+    } finally {
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('renewal metadata & provenance are completely sanitized with no secret tokens', async () => {
+    const server = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'sanitized-renewal-'));
+
+    try {
+      const dataReceipt = makeMockReceipt({
+        url: `${server.baseUrl}/api/protected-data`,
+        method: 'GET',
+        variations: [{ status: 200 }],
+      });
+      const refreshReceipt = makeMockReceipt({
+        url: `${server.baseUrl}/api/auth/refresh`,
+        method: 'POST',
+        variations: [{ status: 200 }],
+      });
+
+      const receiptsDir = path.join(root, '.agent-forge', 'evidence', 'receipts');
+      fs.mkdirSync(receiptsDir, { recursive: true });
+      fs.writeFileSync(path.join(receiptsDir, `${dataReceipt.receipt_id}.json`), JSON.stringify(dataReceipt), 'utf8');
+      fs.writeFileSync(path.join(receiptsDir, `${refreshReceipt.receipt_id}.json`), JSON.stringify(refreshReceipt), 'utf8');
+
+      const specPath = path.join(root, 'spec.json');
+      fs.writeFileSync(specPath, JSON.stringify({
+        base_url: server.baseUrl,
+        endpoints: [
+          {
+            id: 'get-protected-data',
+            method: 'GET',
+            path: '/api/protected-data',
+            classification: 'DIRECT_API_VERIFIED',
+            receipt_id: dataReceipt.receipt_id,
+            verification: { status: 'PASSED', tested_variations: [{ status: 200 }] },
+          }
+        ],
+        auth_renewal: {
+          type: 'refresh_endpoint',
+          trigger_statuses: [401, 403],
+          endpoint: {
+            path: '/api/auth/refresh',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer super-secret-api-key-12345',
+              'Cookie': 'session=secret-session-cookie-xyz',
+            },
+            body_template: {
+              refresh_token: '{refresh_token}',
+              client_secret: 'raw-secret-client-secret-999',
+            }
+          },
+          token_mapping: {
+            source_field: 'access_token',
+            target_header: 'Authorization',
+            target_format: 'Bearer {token}'
+          },
+          receipt_id: refreshReceipt.receipt_id,
+        }
+      }), 'utf8');
+
+      const genRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'sanitized-client', '--endpoint-spec', specPath]);
+      const gen = JSON.parse(genRaw);
+      const pkgDir = gen.output_dir;
+
+      const manifestRaw = fs.readFileSync(path.join(pkgDir, 'endpoint-manifest.json'), 'utf8');
+      assert.ok(!manifestRaw.includes('super-secret-api-key-12345'), 'Manifest must not contain secret api key');
+      assert.ok(!manifestRaw.includes('secret-session-cookie-xyz'), 'Manifest must not contain secret cookie');
+      assert.ok(!manifestRaw.includes('raw-secret-client-secret-999'), 'Manifest must not contain client secret');
+      assert.ok(manifestRaw.includes('{refresh_token}'), 'Manifest preserves template placeholders');
+
+      const provRaw = fs.readFileSync(path.join(pkgDir, 'provenance.json'), 'utf8');
+      assert.ok(!provRaw.includes('super-secret-api-key-12345'));
+      assert.ok(!provRaw.includes('secret-session-cookie-xyz'));
+      assert.ok(!provRaw.includes('raw-secret-client-secret-999'));
+
+      // Validate package passes
+      const valRaw = runPython(['validate-package', '--package-dir', pkgDir]);
+      const val = JSON.parse(valRaw);
+      assert.equal(val.valid, true);
+    } finally {
+      await server.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+
+  test('bounded retry: failing refresh or failing retry stops after 1 attempt, does not loop infinitely', async () => {
+    const server = await startFixtureServer();
+    const privateTests = path.join(REPO_ROOT, '.agent-forge', 'tests');
+    fs.mkdirSync(privateTests, { recursive: true });
+    const root = fs.mkdtempSync(path.join(privateTests, 'bounded-retry-'));
+
+    try {
+      const dataReceipt = makeMockReceipt({
+        url: `${server.baseUrl}/api/protected-data`,
+        method: 'GET',
+        variations: [{ status: 200 }],
+      });
+      const refreshReceipt = makeMockReceipt({
+        url: `${server.baseUrl}/api/auth/refresh`,
+        method: 'POST',
+        variations: [{ status: 200 }],
+      });
+
+      const receiptsDir = path.join(root, '.agent-forge', 'evidence', 'receipts');
+      fs.mkdirSync(receiptsDir, { recursive: true });
+      fs.writeFileSync(path.join(receiptsDir, `${dataReceipt.receipt_id}.json`), JSON.stringify(dataReceipt), 'utf8');
+      fs.writeFileSync(path.join(receiptsDir, `${refreshReceipt.receipt_id}.json`), JSON.stringify(refreshReceipt), 'utf8');
+
+      // 1. Initial auth has invalid refresh_token
+      fs.writeFileSync(path.join(root, '.agent-forge', 'auth.json'), JSON.stringify({
+        token: 'initial-token',
+        refresh_token: 'invalid-refresh-token-bad',
+      }), 'utf8');
+
+      const specPath = path.join(root, 'spec.json');
+      fs.writeFileSync(specPath, JSON.stringify({
+        base_url: server.baseUrl,
+        endpoints: [
+          {
+            id: 'get-protected-data',
+            method: 'GET',
+            path: '/api/protected-data',
+            classification: 'DIRECT_API_VERIFIED',
+            receipt_id: dataReceipt.receipt_id,
+            verification: { status: 'PASSED', tested_variations: [{ status: 200 }] },
+          }
+        ],
+        auth_renewal: {
+          type: 'refresh_endpoint',
+          trigger_statuses: [401, 403],
+          endpoint: {
+            path: '/api/auth/refresh',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body_template: { refresh_token: '{refresh_token}' }
+          },
+          token_mapping: {
+            source_field: 'access_token',
+            target_header: 'Authorization',
+            target_format: 'Bearer {token}'
+          },
+          receipt_id: refreshReceipt.receipt_id,
+        }
+      }), 'utf8');
+
+      const genRaw = runPython(['generate-skill', '--root', root, '--skill-name', 'bounded-client', '--endpoint-spec', specPath]);
+      const gen = JSON.parse(genRaw);
+      const pkgDir = gen.output_dir;
+
+      // Executing client with invalid refresh token fails boundedly without loop
+      const runClientScript = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(pkgDir)})
+from client import APIClient
+client = APIClient()
+res = client.get_protected_data()
+print(json.dumps(res))
+`;
+      const clientResultRaw = execFileSync(PYTHON, ['-c', runClientScript], { encoding: 'utf8', cwd: pkgDir });
+      const clientResult = JSON.parse(clientResultRaw);
+      assert.equal(clientResult.error, true);
+      assert.equal(clientResult.code, 'AUTH_EXPIRED');
+      assert.match(clientResult.message, /renewal failed/);
+    } finally {
+      await server.close();
+      try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { if (error?.code !== 'EPERM') throw error; }
+    }
+  });
+});

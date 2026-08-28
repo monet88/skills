@@ -330,6 +330,47 @@ Generation rules for `client.py`:
 - For explicit endpoint arrays, do not invent an `extract_items` operation. A compatibility alias is allowed only for the intentional flat-spec legacy path.
 - File-based zero-setup auth discovery is allowed only when `client.py` itself is inside a `.agent-forge` ancestor. Exported clients outside that private boundary must use explicit or environment-provided auth.
 
+
+### Verified Auth Renewal & Bounded Retry Template
+
+When `auth_renewal` is backed by a verified receipt, `client.py` includes `_renew_auth(self)` with bounded single-retry semantics:
+
+```python
+    def _renew_auth(self):
+        """Renew authentication using the verified renewal endpoint.
+        Bounded to a single renewal attempt."""
+        if not self.refresh_token:
+            self._discover_auth()
+        if not self.refresh_token:
+            return False
+        # Call renewal endpoint and update self.auth_token + .agent-forge/auth.json
+        ...
+```
+
+On 401/403 triggers, `_request(..., _is_retry=False)` invokes `self._renew_auth()` and retries once with `_is_retry=True`. If the retry or renewal fails, it returns `{"error": True, "code": "AUTH_EXPIRED", "message": "Authentication token expired and renewal failed"}`.
+
+#### Manifest & Provenance Schema (`auth_renewal`)
+
+```json
+{
+  "type": "refresh_endpoint",
+  "trigger_statuses": [401, 403],
+  "endpoint": {
+    "path": "/api/auth/refresh",
+    "method": "POST",
+    "headers": {"Content-Type": "application/json"},
+    "body_template": {"refresh_token": "{refresh_token}"}
+  },
+  "token_mapping": {
+    "source_field": "access_token",
+    "target_header": "Authorization",
+    "target_format": "Bearer {token}"
+  },
+  "receipt_id": "rcpt_...",
+  "receipt_hash": "...",
+  "receipt_version": "1.0"
+}
+```
 ---
 
 ## Python JS-Emitter Template (`scripts/<feature>.py`)

@@ -242,7 +242,9 @@ def execute(args):
 
 EXCLUDED_METADATA_KEYS = {
     "required_keys", "required_key", "pagination_key",
-    "key_count", "sort_key", "partition_key", "primary_key"
+    "key_count", "sort_key", "partition_key", "primary_key",
+    "auth_renewal", "token_mapping", "source_field", "target_header",
+    "target_format", "body_template", "trigger_statuses"
 }
 
 SENSITIVE_KEY_SUBSTRINGS = (
@@ -350,7 +352,9 @@ def sanitize_deep(obj):
                 sanitized[k] = "[REDACTED]"
             elif is_sensitive_key(k):
                 if isinstance(v, str):
-                    if v.lower().startswith("bearer "):
+                    if v.startswith("{") and v.endswith("}"):
+                        sanitized[k] = v
+                    elif v.lower().startswith("bearer "):
                         sanitized[k] = "Bearer [REDACTED]"
                     else:
                         sanitized[k] = "[REDACTED]"
@@ -565,6 +569,86 @@ def find_receipt_for_endpoint(ep, spec, root, args):
                 pass
 
     return None
+
+def validate_auth_renewal(auth_renewal, spec, base_url, root=None, args=None):
+    if not isinstance(auth_renewal, dict):
+        return None
+    r_type = auth_renewal.get("type")
+    if r_type not in ("refresh_endpoint", "login_flow"):
+        return None
+
+    endpoint_conf = auth_renewal.get("endpoint") or {}
+    if not isinstance(endpoint_conf, dict):
+        return None
+
+    renewal_path = endpoint_conf.get("path") or endpoint_conf.get("url") or "/api/auth/refresh"
+    renewal_url = endpoint_conf.get("url") or f"{base_url.rstrip('/')}/{renewal_path.lstrip('/')}"
+    renewal_method = (endpoint_conf.get("method") or "POST").upper()
+
+    renewal_dummy_ep = {
+        "id": "auth-renewal",
+        "method": renewal_method,
+        "path": renewal_path,
+        "url": renewal_url,
+        "classification": "DIRECT_API_VERIFIED",
+        "receipt": auth_renewal.get("receipt"),
+        "receipt_id": auth_renewal.get("receipt_id"),
+        "receipt_file": auth_renewal.get("receipt_file") or auth_renewal.get("receipt_path"),
+        "verification": {
+            "tested_variations": auth_renewal.get("tested_variations")
+            or endpoint_conf.get("tested_variations")
+            or [{"status": 200}]
+        },
+    }
+
+    found_rcpt = find_receipt_for_endpoint(renewal_dummy_ep, spec, root, args)
+    if not found_rcpt:
+        return None
+
+    is_valid, validated_or_reason = validate_verification_receipt(
+        found_rcpt, renewal_dummy_ep, spec, base_url
+    )
+    if not is_valid:
+        return None
+
+    validated_rcpt = validated_or_reason
+
+    raw_statuses = auth_renewal.get("trigger_statuses", [401, 403])
+    if isinstance(raw_statuses, list):
+        trigger_statuses = [int(s) for s in raw_statuses if isinstance(s, (int, str)) and str(s).isdigit()]
+    else:
+        trigger_statuses = [401, 403]
+    if not trigger_statuses:
+        trigger_statuses = [401, 403]
+
+    token_mapping = auth_renewal.get("token_mapping") or {}
+    if not isinstance(token_mapping, dict):
+        token_mapping = {}
+
+    sanitized_mapping = {
+        "source_field": str(token_mapping.get("source_field") or "access_token"),
+        "target_header": str(token_mapping.get("target_header") or "Authorization"),
+        "target_format": str(token_mapping.get("target_format") or "Bearer {token}"),
+    }
+
+    sanitized_endpoint = {
+        "path": renewal_path,
+        "method": renewal_method,
+        "headers": endpoint_conf.get("headers") or {"Content-Type": "application/json"},
+        "body_template": endpoint_conf.get("body_template") or {"refresh_token": "{refresh_token}"},
+    }
+    if "url" in endpoint_conf and endpoint_conf["url"]:
+        sanitized_endpoint["url"] = sanitize_url(endpoint_conf["url"])
+
+    return {
+        "type": r_type,
+        "trigger_statuses": trigger_statuses,
+        "endpoint": sanitize_deep(sanitized_endpoint),
+        "token_mapping": sanitize_deep(sanitized_mapping),
+        "receipt_id": validated_rcpt.get("receipt_id"),
+        "receipt_hash": validated_rcpt.get("receipt_hash"),
+        "receipt_version": validated_rcpt.get("receipt_version", "1.0"),
+    }
 
 
 def validate_har_lifecycle(root, run_id, har_file_path=None):
@@ -1038,6 +1122,12 @@ def generate_skill(args):
     endpoint_path = spec.get("path") or "/api/items"
     run_id = getattr(args, "run_id", None) or spec.get("run_id")
 
+    raw_auth_renewal = spec.get("auth_renewal")
+    verified_auth_renewal = None
+    if raw_auth_renewal:
+        verified_auth_renewal = validate_auth_renewal(raw_auth_renewal, spec, base_url, root, args)
+    elif is_refining and existing_manifest and existing_manifest.get("auth_renewal"):
+        verified_auth_renewal = validate_auth_renewal(existing_manifest.get("auth_renewal"), spec, base_url, root, args) or existing_manifest.get("auth_renewal")
     raw_endpoints = spec.get("endpoints")
     spec_has_explicit_endpoints = bool(raw_endpoints)
     if not raw_endpoints:
@@ -1118,6 +1208,8 @@ def generate_skill(args):
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "endpoints": sanitized_endpoints
     }
+    if verified_auth_renewal:
+        manifest["auth_renewal"] = verified_auth_renewal
     (output_dir / "endpoint-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     # 2. Write provenance.json
@@ -1179,8 +1271,9 @@ def generate_skill(args):
         provenance["exploration_time"] = _et
     elif is_refining and existing_provenance and "exploration_time" in existing_provenance:
         provenance["exploration_time"] = existing_provenance["exploration_time"]
+    if verified_auth_renewal:
+        provenance["auth_renewal"] = verified_auth_renewal
     (output_dir / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
-
     # 3. Models generation (models.py) when schema is present
     models_spec = spec.get("models") or {}
     if models_spec:
@@ -1317,19 +1410,142 @@ def generate_skill(args):
             cli_call_code = f'    result = client.{primary_ep_id}({", ".join(cli_call_args)})'
 
 
-        client_code = f'''import argparse
-import json
-import os
-import sys
-import urllib.error
-import urllib.parse
-import urllib.request
-from pathlib import Path
+        if verified_auth_renewal:
+            renewal_ep = verified_auth_renewal.get("endpoint") or {}
+            renewal_path = renewal_ep.get("path") or "/api/auth/refresh"
+            renewal_method = (renewal_ep.get("method") or "POST").upper()
+            renewal_headers = renewal_ep.get("headers") or {"Content-Type": "application/json"}
+            renewal_body_template = renewal_ep.get("body_template") or {"refresh_token": "{refresh_token}"}
+            t_map = verified_auth_renewal.get("token_mapping") or {}
+            source_field = t_map.get("source_field") or "access_token"
+            target_header = t_map.get("target_header") or "Authorization"
+            target_format = t_map.get("target_format") or "Bearer {token}"
+            trigger_statuses = verified_auth_renewal.get("trigger_statuses", [401, 403])
 
-BASE_URL = {json.dumps(base_url)}
+            client_class_code = f'''class APIClient:
+    def __init__(self, base_url=BASE_URL, auth_token=None, refresh_token=None):
+        self.base_url = base_url.rstrip("/")
+        self.auth_token = auth_token or os.environ.get("API_AUTH_TOKEN")
+        self.refresh_token = refresh_token or os.environ.get("API_REFRESH_TOKEN") or os.environ.get("REFRESH_TOKEN")
+        if not self.auth_token or not self.refresh_token:
+            self._discover_auth()
 
+    def _discover_auth(self):
+        """Discover auth.json from the private .agent-forge boundary that contains this client file.
+        If this client is inside a .agent-forge ancestor directory, read auth.json from that boundary.
+        If this client is outside any .agent-forge directory (exported/installed), no file discovery
+        is performed — use environment variables or pass tokens explicitly."""
+        client_path = Path(__file__).resolve()
+        for ancestor in client_path.parents:
+            if ancestor.name == ".agent-forge":
+                auth_file = ancestor / "auth.json"
+                if auth_file.exists():
+                    try:
+                        auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+                        if not self.auth_token:
+                            token = auth_data.get("token") or auth_data.get("auth_token")
+                            if token:
+                                self.auth_token = token
+                        if not self.refresh_token:
+                            rt = auth_data.get("refresh_token")
+                            if rt:
+                                self.refresh_token = rt
+                    except Exception:
+                        pass
+                return
 
-class APIClient:
+    def _save_auth(self, new_token):
+        client_path = Path(__file__).resolve()
+        for ancestor in client_path.parents:
+            if ancestor.name == ".agent-forge":
+                auth_file = ancestor / "auth.json"
+                try:
+                    auth_data = {{}}
+                    if auth_file.exists():
+                        try:
+                            auth_data = json.loads(auth_file.read_text(encoding="utf-8"))
+                        except Exception:
+                            auth_data = {{}}
+                    auth_data["token"] = new_token
+                    auth_data["auth_token"] = new_token
+                    auth_file.write_text(json.dumps(auth_data, indent=2) + "\\n", encoding="utf-8")
+                except Exception:
+                    pass
+                return
+
+    def _renew_auth(self):
+        """Renew authentication using the verified renewal endpoint.
+        Bounded to a single renewal attempt."""
+        if not self.refresh_token:
+            self._discover_auth()
+        if not self.refresh_token:
+            return False
+
+        renewal_url = f"{{self.base_url}}/{renewal_path.lstrip('/')}"
+        headers = {json.dumps(renewal_headers)}
+        body_template = {json.dumps(renewal_body_template)}
+        body = {{}}
+        if isinstance(body_template, dict):
+            for k, v in body_template.items():
+                if isinstance(v, str) and "{{refresh_token}}" in v:
+                    body[k] = v.replace("{{refresh_token}}", str(self.refresh_token))
+                else:
+                    body[k] = v
+        else:
+            body = {{"refresh_token": str(self.refresh_token)}}
+
+        try:
+            encoded_data = json.dumps(body).encode("utf-8")
+            req = urllib.request.Request(renewal_url, data=encoded_data, headers=headers, method={json.dumps(renewal_method)})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode("utf-8")
+                data = json.loads(raw)
+                new_token = data.get({json.dumps(source_field)})
+                if new_token:
+                    self.auth_token = new_token
+                    self._save_auth(new_token)
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def _request(self, path, params=None, data=None, method="GET", _is_retry=False):
+        url = f"{{self.base_url}}/{{path.lstrip('/')}}"
+        if params:
+            clean_params = {{k: v for k, v in params.items() if v is not None}}
+            if clean_params:
+                url += f"?{{urllib.parse.urlencode(clean_params)}}"
+
+        headers = {{
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json, text/plain, */*",
+        }}
+        if self.auth_token:
+            target_hdr = {json.dumps(target_header)}
+            target_fmt = {json.dumps(target_format)}
+            headers[target_hdr] = target_fmt.replace("{{token}}", self.auth_token)
+
+        encoded_data = json.dumps(data).encode("utf-8") if data else None
+        if encoded_data:
+            headers["Content-Type"] = "application/json"
+
+        req = urllib.request.Request(url, data=encoded_data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode("utf-8")
+                return json.loads(raw)
+        except urllib.error.HTTPError as exc:
+            if exc.code in {json.dumps(trigger_statuses)}:
+                if not _is_retry:
+                    if self._renew_auth():
+                        return self._request(path, params=params, data=data, method=method, _is_retry=True)
+                    return {{"error": True, "code": "AUTH_EXPIRED", "message": "Authentication token expired and renewal failed"}}
+                return {{"error": True, "code": "AUTH_EXPIRED", "message": "Authentication token expired and renewal failed"}}
+            return {{"error": True, "code": f"HTTP_{{exc.code}}", "message": f"HTTP request failed with status {{exc.code}}"}}
+        except Exception as exc:
+            return {{"error": True, "code": "REQUEST_FAILED", "message": "HTTP request failed due to client connection error"}}'''
+        else:
+            client_class_code = f'''class APIClient:
     def __init__(self, base_url=BASE_URL, auth_token=None):
         self.base_url = base_url.rstrip("/")
         self.auth_token = auth_token or os.environ.get("API_AUTH_TOKEN")
@@ -1387,7 +1603,21 @@ class APIClient:
                 return {{"error": True, "code": "AUTH_EXPIRED", "message": f"Authentication token expired or unauthorized (HTTP {{exc.code}})"}}
             return {{"error": True, "code": f"HTTP_{{exc.code}}", "message": f"HTTP request failed with status {{exc.code}}"}}
         except Exception as exc:
-            return {{"error": True, "code": "REQUEST_FAILED", "message": "HTTP request failed due to client connection error"}}
+            return {{"error": True, "code": "REQUEST_FAILED", "message": "HTTP request failed due to client connection error"}}'''
+
+        client_code = f'''import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+BASE_URL = {json.dumps(base_url)}
+
+
+{client_class_code}
 
 {methods_joined}
 
@@ -1820,6 +2050,11 @@ def validate_package(args):
                         ver = ep.get("verification", {})
                         if not ver.get("receipt_id") or not ver.get("receipt_hash") or not ver.get("receipt_version"):
                             errors.append(f"DIRECT_API_VERIFIED endpoint '{ep.get('id')}' is marked PASSED without valid verification receipt reference")
+            if m.get("auth_renewal"):
+                ar = m.get("auth_renewal")
+                if isinstance(ar, dict) and ar.get("type") in ("refresh_endpoint", "login_flow"):
+                    if not ar.get("receipt_id") or not ar.get("receipt_hash"):
+                        errors.append("auth_renewal is present in manifest without valid verification receipt reference")
         except Exception as exc:
             errors.append(f"endpoint-manifest.json is invalid JSON: {exc}")
     prov_path = pkg_dir / "provenance.json"
@@ -1830,6 +2065,11 @@ def validate_package(args):
             p = json.loads(prov_path.read_text(encoding="utf-8"))
             if "har_sha256" not in p:
                 errors.append("provenance.json must contain 'har_sha256'")
+            if p.get("auth_renewal"):
+                ar = p.get("auth_renewal")
+                if isinstance(ar, dict) and ar.get("type") in ("refresh_endpoint", "login_flow"):
+                    if not ar.get("receipt_id") or not ar.get("receipt_hash"):
+                        errors.append("auth_renewal is present in provenance without valid verification receipt reference")
         except Exception as exc:
             errors.append(f"provenance.json is invalid JSON: {exc}")
 
