@@ -1,0 +1,10 @@
+interface:
+  display_name: "Image Prompt Guide"
+  short_description: "Search patterns and craft production image prompts"
+  default_prompt: "Use $image-prompt-guide to turn my image idea into a production-ready prompt."
+
+policy:
+  allow_implicit_invocation: true
+  products:
+    - chatgpt
+    - codex
