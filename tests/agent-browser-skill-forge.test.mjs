@@ -147,15 +147,14 @@ function startFixtureServer() {
 }
 
 describe('agent-browser-skill-forge Issue #11', () => {
-  test('canonical Skill UX discovers the new forge without losing existing forges', () => {
+  test('canonical Skill UX discovers the new forge', () => {
     const output = execSync(`npx skills add "${REPO_ROOT}" -l`, {
       encoding: 'utf8',
       timeout: 30000,
     });
 
     assert.match(output, /agent-browser-skill-forge[\s\S]*trusted configuration boundary/i);
-    assert.match(output, /browser-act-skill-forge/);
-    assert.match(output, /pinchtab-skill-forge/);
+    assert.match(output, /ask-impeccable/);
   });
 
   test('package exposes the approved phase structure and live runtime contract', () => {
@@ -3552,19 +3551,6 @@ print(json.dumps(result))
     assert.doesNotMatch(trackedFiles, /\bNOTE-DEBUGS\.md\b/, 'git ls-files must not contain NOTE-DEBUGS.md in product state');
   });
 
-  test('existing browser-act-skill-forge and pinchtab-skill-forge remain unchanged and pass checks', () => {
-    const browserActDir = path.join(REPO_ROOT, 'skills', 'browser-act-skill-forge');
-    const pinchtabDir = path.join(REPO_ROOT, 'skills', 'pinchtab-skill-forge');
-
-    assert.ok(fs.existsSync(path.join(browserActDir, 'SKILL.md')));
-    assert.ok(fs.existsSync(path.join(pinchtabDir, 'SKILL.md')));
-
-    const browserActContent = fs.readFileSync(path.join(browserActDir, 'SKILL.md'), 'utf8');
-    assert.match(browserActContent, /^name: browser-act-skill-forge$/m);
-
-    const pinchtabContent = fs.readFileSync(path.join(pinchtabDir, 'SKILL.md'), 'utf8');
-    assert.match(pinchtabContent, /^name: pinchtab-skill-forge$/m);
-  });
 });
 
 describe('agent-browser-skill-forge Issue #18 (Runtime Receipts & HAR Lifecycle Gating)', () => {

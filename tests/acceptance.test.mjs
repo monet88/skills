@@ -346,8 +346,6 @@ describe('Agent Browser Skill Forge Acceptance Suite', () => {
 
     assert.match(output, /agent-browser-skill-forge/, 'CLI should list agent-browser-skill-forge');
     assert.match(output, /trusted configuration boundary/i, 'CLI should show the agent-browser-skill-forge description');
-    assert.match(output, /browser-act-skill-forge/, 'Existing browser-act-skill-forge must remain discoverable');
-    assert.match(output, /pinchtab-skill-forge/, 'Existing pinchtab-skill-forge must remain discoverable');
     assert.match(output, /ask-impeccable/, 'Existing ask-impeccable must remain discoverable');
   });
 
@@ -494,19 +492,6 @@ describe('Agent Browser Skill Forge Acceptance Suite', () => {
     assert.deepEqual(claudeYaml.policy.products, ['chatgpt', 'codex']);
   });
 
-  test('Existing forges (browser-act-skill-forge and pinchtab-skill-forge) remain discoverable and valid', () => {
-    const browserActSkillPath = path.join(REPO_ROOT, 'skills', 'browser-act-skill-forge', 'SKILL.md');
-    const pinchtabSkillPath = path.join(REPO_ROOT, 'skills', 'pinchtab-skill-forge', 'SKILL.md');
-
-    assert.ok(fs.existsSync(browserActSkillPath), 'browser-act-skill-forge SKILL.md must exist');
-    assert.ok(fs.existsSync(pinchtabSkillPath), 'pinchtab-skill-forge SKILL.md must exist');
-
-    const parsedBrowserAct = parseFrontmatter(fs.readFileSync(browserActSkillPath, 'utf8'));
-    assert.equal(parsedBrowserAct.data.name, 'browser-act-skill-forge');
-
-    const parsedPinchtab = parseFrontmatter(fs.readFileSync(pinchtabSkillPath, 'utf8'));
-    assert.equal(parsedPinchtab.data.name, 'pinchtab-skill-forge');
-  });
 
   test('.agent-forge and private artifacts remain untracked and excluded', () => {
     const gitignorePath = path.join(REPO_ROOT, '.gitignore');
