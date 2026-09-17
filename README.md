@@ -47,7 +47,7 @@ Clone this repository and copy the desired skill folder from `skills/<skill-name
 | :--- | :--- |
 | [`agent-browser-skill-forge`](skills/agent-browser-skill-forge) | Forges reusable skill packages and direct API clients from website exploration via `agent-browser`. |
 | [`ask-impeccable`](skills/ask-impeccable) | Coordinator for Impeccable UI/UX workflows executed inside coding workers. |
-| [`image-prompt-guide`](skills/image-prompt-guide) | Design, rewrite, critique, and optimize prompts for image generation and editing models. |
+| [`image-prompt-guide`](skills/image-prompt-guide) | Design, rewrite, critique, and optimize prompts for image generation and editing models, including reverse-engineering a prompt from a reference image. |
 
 ---
 

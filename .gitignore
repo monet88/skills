@@ -19,6 +19,8 @@ build/
 .env.local
 .tmp/
 tmp/
+__pycache__/
+*.pyc
 
 # Local agent installs and locks
 .agents/

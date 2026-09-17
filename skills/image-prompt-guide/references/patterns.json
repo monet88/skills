@@ -11,7 +11,7 @@
       "guidance": "Anchor the asset's purpose and audience, then describe subject, physical action, environment, composition, visual direction, and output as connected natural language.",
       "prompt_shape": "Create a [asset] for [purpose/audience]. Show [subject] [action] in [environment], composed as [layout/viewpoint], with [style, light, palette]. [output].",
       "pitfalls": ["Disconnected comma-separated style tags", "Empty quality adjectives", "No use context"],
-      "source": "docs/prompting-guide/nano-banana/ultimate-prompting-guide.md"
+      "source": "https://cloud.google.com/blog/products/ai-machine-learning/ultimate-prompting-guide-for-nano-banana"
     },
     {
       "id": "craft-canvas-first",
@@ -23,7 +23,7 @@
       "guidance": "When structure matters, declare orientation, aspect ratio, grid or fixed regions, and subject placement before surface detail so the model budgets space correctly.",
       "prompt_shape": "Design a [ratio/orientation] [asset] with [named regions/grid]. Place [subject] in [position] and reserve [negative-space zone] for [purpose].",
       "pitfalls": ["Adding ratio only after a dense scene description", "Conflicting orientation and layout", "Unallocated text space"],
-      "source": "docs/prompting-guide/gpt-image-2/craft.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/craft.md"
     },
     {
       "id": "craft-exact-text",
@@ -32,10 +32,10 @@
       "providers": ["universal", "openai", "gemini"],
       "modes": ["generate", "edit"],
       "keywords": ["text", "typography", "headline", "copy", "Vietnamese", "Chinese", "multilingual", "chữ", "tiêu đề", "văn bản", "tiếng Việt"],
-      "guidance": "Quote every literal string and specify language, position, font character, size hierarchy, alignment, and readability. Preserve user spelling, accents, punctuation, and case.",
-      "prompt_shape": "Exact readable text: headline \"[TEXT]\" at [position] in [type style and size]; subtitle \"[TEXT]\" at [position] in [smaller style].",
-      "pitfalls": ["Paraphrasing supplied copy", "Unquoted text", "Dense paragraphs", "No hierarchy or position"],
-      "source": "docs/prompting-guide/gpt-image-2/craft.md"
+      "guidance": "Quote every literal string and specify language, position, font character, size hierarchy, alignment, and readability. Preserve user spelling, accents, punctuation, and case. Fill every information slot with real copy instead of placeholders, say how many times each string should appear, and keep any numbers internally consistent so the model does not correct them for you. Dense layouts benefit from an explicit crisp, correctly spelled constraint.",
+      "prompt_shape": "Exact readable text: headline \"[TEXT]\" at [position] in [type style and size], rendered exactly once; subtitle \"[TEXT]\" at [position] in [smaller style]. Every line of type crisp and correctly spelled, no extra characters.",
+      "pitfalls": ["Paraphrasing supplied copy", "Unquoted text", "Dense paragraphs", "No hierarchy or position", "Placeholder copy left in a slot", "Numbers that contradict each other"],
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/craft.md"
     },
     {
       "id": "craft-scene-density",
@@ -47,7 +47,7 @@
       "guidance": "Use 5-12 concrete scene nouns and explicit spatial relationships. Add a few material and lighting controls instead of stacking vague praise words.",
       "prompt_shape": "[Subject] at [location], surrounded by [specific props and surfaces], with [foreground], [midground], and [background relationship].",
       "pitfalls": ["Generic environments", "Adjective piles", "Objects with no spatial relationship"],
-      "source": "docs/prompting-guide/gpt-image-2/craft.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/craft.md"
     },
     {
       "id": "craft-capture-context",
@@ -56,10 +56,10 @@
       "providers": ["universal", "openai", "gemini"],
       "modes": ["generate"],
       "keywords": ["photorealistic", "camera", "lens", "candid", "documentary", "RAW", "nhiếp ảnh", "ống kính", "ảnh thật", "đời thường"],
-      "guidance": "Choose one dominant capture context—device or camera feel, viewpoint, focal length, exposure character, and ordinary imperfections—to make realism observable.",
+      "guidance": "Choose one dominant capture context—device or camera feel, viewpoint, focal length, exposure character, and ordinary imperfections—to make realism observable. Read lens and framing language as visual direction rather than an exact optical simulation, and keep every camera detail inside that one context.",
       "prompt_shape": "[Editorial/candid/documentary] photograph captured [viewpoint] with [one camera/lens context], [light source], [ordinary imperfections].",
-      "pitfalls": ["Conflicting camera bodies or lenses", "Plastic over-polish", "Saying photorealistic without capture evidence"],
-      "source": "docs/prompting-guide/gpt-image-2/craft.md"
+      "pitfalls": ["Conflicting camera bodies or lenses", "Plastic over-polish", "Saying photorealistic without capture evidence", "Expecting exact optical simulation from lens metadata"],
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/craft.md"
     },
     {
       "id": "craft-material-light-palette",
@@ -71,7 +71,7 @@
       "guidance": "Control surfaces, light, and color as three independent systems. Describe texture and physical response, light source/direction/softness, then dominant and accent colors.",
       "prompt_shape": "Materials: [surfaces/textures]. Lighting: [source, direction, softness, temperature, shadow]. Palette: [dominants, accent, saturation/value].",
       "pitfalls": ["Compressing all controls into premium", "Incompatible materials", "Lighting that contradicts the environment"],
-      "source": "docs/prompting-guide/gpt-image-2/craft.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/craft.md"
     },
     {
       "id": "craft-targeted-avoid",
@@ -80,10 +80,10 @@
       "providers": ["universal", "openai", "gemini"],
       "modes": ["generate", "edit", "inpaint", "multi-reference"],
       "keywords": ["negative prompt", "avoid", "defect", "artifact", "exclude", "tránh", "lỗi", "không muốn"],
-      "guidance": "Use a short avoid line only for likely model defaults or defects, while positively describing the intended result. Prioritize identity drift, geometry, text, edge, and style conflicts relevant to the task.",
+      "guidance": "Use a short avoid line only for likely model defaults or defects, while positively describing the intended result. A short avoid list suits GPT Image 2.5; for Gemini and Nano Banana prefer positive framing such as empty street instead of no cars. Prioritize identity drift, geometry, text, edge, and style conflicts relevant to the task.",
       "prompt_shape": "Avoid [3-6 concrete failure modes]; keep [positive target behavior].",
       "pitfalls": ["Long generic negative lists", "Negatives that dominate intent", "Contradicting positive instructions"],
-      "source": "docs/prompting-guide/gpt-image-2/craft.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/craft.md"
     },
     {
       "id": "craft-multi-panel-consistency",
@@ -91,11 +91,35 @@
       "title": "Multi-panel consistency contract",
       "providers": ["universal", "openai", "gemini"],
       "modes": ["generate", "multi-reference"],
-      "keywords": ["multi-panel", "grid", "storyboard", "character sheet", "proof sheet", "consistency", "nhiều khung", "bảng nhân vật", "nhất quán"],
-      "guidance": "State exact panel count and grid, assign each panel a role, and lock shared identity, proportions, costume, palette, medium, and environment motifs across the set.",
+      "keywords": ["multi-panel", "grid", "storyboard", "character sheet", "proof sheet", "consistency", "consistent character", "keep character consistent", "across panels", "nhiều khung", "bảng nhân vật", "nhất quán"],
+      "guidance": "State exact panel count and grid, assign each panel a role, and lock shared identity, proportions, costume, palette, medium, and environment motifs across the set. A hero-plus-details collage (one large panel plus smaller supporting views) also works when the layout is named and every panel gets its content. For a recurring character, introduce it once on a plain backdrop, then repeat its defining details in every later scene and forbid redesign.",
       "prompt_shape": "Create a [rows × columns] board. Panel 1: [...]. Panel 2: [...]. Keep [shared constraints] identical across every panel.",
-      "pitfalls": ["Unspecified panel count", "Panels with no distinct roles", "Style or identity drift"],
-      "source": "docs/prompting-guide/gpt-image-2/craft.md"
+      "pitfalls": ["Unspecified panel count", "Panels with no distinct roles", "Style or identity drift", "Repeating defining details only in the first image of a series", "Letting a redesign request pass without an explicit do-not-redesign line"],
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/craft.md"
+    },
+    {
+      "id": "craft-edit-preserve-inventory",
+      "domain": "craft",
+      "title": "Change one element, keep the inventory",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["edit", "inpaint", "multi-reference"],
+      "keywords": ["change only", "preserve list", "keep everything else", "keep the rest", "swap", "invariants", "multi-turn", "rebuild shadow", "do not restyle", "giữ nguyên", "chỉ đổi", "bất biến"],
+      "guidance": "Name the single element that changes, list the inventory that must survive (surrounding objects, surfaces, framing, background, light direction), and name the physical consequences the model should rebuild such as contact shadow, reflection, and occlusion. State exclusions for unwanted text, logos, and watermarks, and restate the invariants on every turn instead of assuming an earlier turn is remembered. When a region must stay pixel-identical, composite the approved edit back into the original instead of relying on the prompt.",
+      "prompt_shape": "Change only [single element]: [desired result]. Keep everything else exactly as it is: [inventory of objects, surfaces, framing, background, light direction]. Rebuild [contact shadow, reflection, occlusion]. Do not add [text, logos, watermarks] and do not restyle the scene.",
+      "pitfalls": ["Preserve list omitted, so the scene gets repainted", "Stale shadow or reflection left under the changed element", "Assuming a previous turn is remembered", "Expecting a pixel-identical region from prompting alone"],
+      "source": "https://developers.openai.com/api/docs/guides/image-prompting"
+    },
+    {
+      "id": "craft-style-artefacts",
+      "domain": "craft",
+      "title": "Style artefacts, not style names",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit"],
+      "keywords": ["style artefact", "risograph", "halftone", "film grain", "halation", "blueprint", "ukiyo-e", "paper texture", "medium", "chất liệu in", "vân giấy"],
+      "guidance": "Naming a style alone tends to return a filter. Name the medium and the artefacts that prove it: misregistration on a color plate, paper tooth, ink mottling, halftone shading, grain, halation, gate weave, uniform blueprint stroke weights without perspective, or a bokashi gradient and keyblock outlines.",
+      "prompt_shape": "[Medium and substrate], with [artefact list: plate misregistration, paper tooth, ink mottling, halftone, grain, halation, gate weave], [line and shading behavior], no gradients unless the medium has them.",
+      "pitfalls": ["Style name with no artefact evidence", "Artefacts that contradict the substrate", "Every technique listed at once"],
+      "source": "AtlasCloudAI/awesome-gpt-image-2.5-prompts docs/prompting-guide.md"
     },
     {
       "id": "template-photography",
@@ -104,10 +128,10 @@
       "providers": ["universal", "openai", "gemini"],
       "modes": ["generate"],
       "keywords": ["photography", "photo", "realistic", "portrait", "candid", "documentary", "street", "ảnh", "chân dung", "đời thường", "tả thực"],
-      "guidance": "Define the publication or use context, one capture frame, subject behavior, time/place, natural imperfections, light direction, and crop.",
+      "guidance": "Define the publication or use context, one capture frame, subject behavior, time/place, natural imperfections, light direction, focus target, texture realism, and crop. Name one known lighting setup (three-point key/fill/rim, or one practical source) instead of \"good lighting\", and request the textures that read as real: skin with visible pores, wool weave, brushed metal.",
       "prompt_shape": "A [use-context] photograph of [subject/action] at [place/time], captured [viewpoint and one optics context], lit by [source], with [ordinary imperfections], [ratio].",
       "pitfalls": ["Wax-like skin", "Generic studio perfection", "Several incompatible camera systems"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-photography.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-photography.md"
     },
     {
       "id": "template-fashion-editorial",
@@ -119,7 +143,7 @@
       "guidance": "Specify adult subject, garment silhouette and fabric behavior, pose, editorial location, composition, one optics context, skin and fabric micro-texture, and publication ratio.",
       "prompt_shape": "Full-body editorial fashion photograph for [publication/campaign]. [Adult subject] wears [garment silhouette/material], posing [action] in [location]. [composition, light, optics, palette], [ratio].",
       "pitfalls": ["Ambiguous age", "Plastic skin", "Fabric with no gravity or folds", "Garment hidden by crop"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-fashion-editorial.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-fashion-editorial.md"
     },
     {
       "id": "template-product-commerce",
@@ -128,10 +152,10 @@
       "providers": ["universal", "openai", "gemini"],
       "modes": ["generate", "edit", "multi-reference"],
       "keywords": ["product", "commerce", "packaging", "ecommerce", "hero", "advertising", "sản phẩm", "bao bì", "quảng cáo", "thương mại"],
-      "guidance": "Lock product geometry and label details, then specify surface, background, material response, lighting rig, hero hierarchy, and output crop. JSON-like sections work well for complex renders.",
+      "guidance": "Lock product geometry and label details, then specify surface, background, material response, lighting rig, hero hierarchy, and output crop. Name the material, not the category: navy blue tweed rather than a suit jacket, etched silver leaf rather than armor, glazed ceramic rather than a mug. JSON-like sections work well for complex renders.",
       "prompt_shape": "Create a [ratio] commercial hero visual. Product: [geometry/material/label]. Environment: [surface/background]. Lighting: [rig]. Composition: [hero placement]. Preserve [brand invariants].",
       "pitfalls": ["Warped packaging", "Invented logos", "Unreadable labels", "Toy-like CGI materials"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-product-and-food.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-product-and-food.md"
     },
     {
       "id": "template-food",
@@ -143,7 +167,7 @@
       "guidance": "Describe ingredient state, temperature cues, moisture, texture, serving vessel, motion if any, surface, light, and appetite-focused composition.",
       "prompt_shape": "A [commercial/editorial] food photograph of [dish/drink], showing [texture, steam/condensation, ingredients, motion], arranged [composition] on [surface], lit by [source].",
       "pitfalls": ["Plastic ingredients", "Impossible splashes", "Unclear hero item", "Cluttered props"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-product-and-food.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-product-and-food.md"
     },
     {
       "id": "template-poster-typography",
@@ -151,11 +175,11 @@
       "title": "Poster, cover, and typography system",
       "providers": ["universal", "openai", "gemini"],
       "modes": ["generate", "edit"],
-      "keywords": ["poster", "typography", "cover", "headline", "campaign", "event", "áp phích", "bìa", "chữ", "sự kiện"],
+      "keywords": ["poster", "typography", "typography poster", "poster text", "vietnamese poster", "concert", "rock concert", "event poster", "cover", "headline", "campaign", "event", "movie poster", "film poster", "horror", "áp phích", "bìa", "chữ", "sự kiện", "poster phim"],
       "guidance": "Allocate headline, subject, support copy, CTA, and fine-print zones; quote every string and define a clear promotional hierarchy readable at the target distance.",
       "prompt_shape": "Design a [ratio] [poster/cover]. Headline \"[TEXT]\" in [style] at [position]; support copy \"[TEXT]\"; [subject scene]. Maintain [hierarchy, palette, margins].",
       "pitfalls": ["Flat text hierarchy", "Garbled multilingual copy", "Fake sponsor strip", "No safe area"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-typography-and-posters.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-typography-and-posters.md"
     },
     {
       "id": "template-infographic",
@@ -164,10 +188,10 @@
       "providers": ["universal", "openai", "gemini"],
       "modes": ["generate"],
       "keywords": ["infographic", "field guide", "timeline", "explainer", "educational", "museum", "thông tin", "hướng dẫn", "dòng thời gian", "giáo dục"],
-      "guidance": "Define 3-5 fixed modules, reading order, labels, annotations, legend, and visual hierarchy before illustration detail. Keep copy short and verify factual content.",
+      "guidance": "Define 3-5 fixed modules, reading order, labels, annotations, legend, and visual hierarchy before illustration detail. Calibrate the depth of the content to a named audience (\"suitable for a high-school science textbook\"), and have every arrow carry a relationship rather than decoration. Keep copy short and verify factual content.",
       "prompt_shape": "Create a [ratio] [field guide/infographic] with [named modules]. Use [arrows/callouts/icons] to show [relationships], exact labels [...], and a [legend/footer].",
-      "pitfalls": ["Long paragraphs", "Too many modules", "Unverified facts", "Decorative arrows with no meaning"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-infographics-and-field-guides.md"
+      "pitfalls": ["Long paragraphs", "Too many modules", "Unverified facts", "Decorative arrows with no meaning", "Depth that does not match the stated audience"],
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-infographics-and-field-guides.md"
     },
     {
       "id": "template-research-diagram",
@@ -175,11 +199,11 @@
       "title": "Research and technical diagram",
       "providers": ["universal", "openai", "gemini"],
       "modes": ["generate"],
-      "keywords": ["research", "diagram", "academic", "architecture diagram", "flow", "paper figure", "sơ đồ", "nghiên cứu", "học thuật", "luồng"],
+      "keywords": ["research", "diagram", "academic", "architecture diagram", "flow", "paper figure", "mind map", "concept map", "process flow", "sơ đồ", "nghiên cứu", "học thuật", "luồng", "sơ đồ tư duy"],
       "guidance": "Use diagram grammar: panels, nodes, zones, arrows, line semantics, exact module labels, legend, and publication constraints. Separate facts from illustrative placeholders.",
       "prompt_shape": "Landscape [venue/style] figure with [columns/zones]. Show [nodes/modules] connected by [directed relationships]. Encode [meaning] with [color/line/thickness]. Exact labels: [...].",
       "pitfalls": ["Illustration without flow semantics", "Tiny labels", "Ambiguous arrows", "Invented quantitative data"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-research-paper-figures.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-research-paper-figures.md"
     },
     {
       "id": "template-data-visualization",
@@ -191,7 +215,7 @@
       "guidance": "Name the chart family, data and units, encoding rules, scales, labels, legend, and annotation logic. Keep repeated panels aligned and accessible.",
       "prompt_shape": "Create a [chart family] showing [data]. X-axis [...], Y-axis [...], units [...]. Encode [variable] by [color/size/thickness]. Include [legend, annotations, source note].",
       "pitfalls": ["Invented data", "Misleading scale", "No units", "Color-only distinctions", "Inconsistent small multiples"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-data-visualization.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-data-visualization.md"
     },
     {
       "id": "template-ui-mockup",
@@ -203,7 +227,7 @@
       "guidance": "Write the prompt like a product spec: fictional product, device/canvas, information architecture, components, real copy/data, states, palette, spacing, and precise alignment.",
       "prompt_shape": "Create a high-fidelity [platform/device] screen for [fictional product]. Canvas [...]. Header [...]. Components [...]. Navigation [...]. Exact copy/data [...].",
       "pitfalls": ["Generic modern UI", "Placeholder text", "Mixed platform chrome", "No interaction state"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-ui-ux-mockups.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-ui-ux-mockups.md"
     },
     {
       "id": "template-brand-system",
@@ -215,7 +239,7 @@
       "guidance": "Show an original mark and wordmark with palette, type system, spacing behavior, packaging, social or physical touchpoints, and one coherent board hierarchy.",
       "prompt_shape": "Create a [ratio] brand identity board for fictional [brand]. Include [mark, wordmark, palette, type, packaging, touchpoints] arranged in [grid].",
       "pitfalls": ["Copying a real brand", "Random mockups", "No system relationships", "Fake legal or sponsor text"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-brand-systems-and-identity.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-brand-systems-and-identity.md"
     },
     {
       "id": "template-architecture-interior",
@@ -227,7 +251,7 @@
       "guidance": "Specify room/building type, viewpoint, spatial layout, materials, light direction, human scale, negative space, and realistic contact shadows.",
       "prompt_shape": "[Viewpoint] architectural image of [space], organized as [spatial layout], using [materials], lit from [direction/source], with [human-scale cues and negative space].",
       "pitfalls": ["Impossible circulation", "Mixed vanishing points", "Floating furniture", "Materials with no scale"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-architecture-and-interior.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-architecture-and-interior.md"
     },
     {
       "id": "template-character-sheet",
@@ -239,7 +263,7 @@
       "guidance": "Lock original identity and proportions, then request exact front/side/back views, expressions, outfit or parts breakdown, palette, scale, and shared rendering treatment.",
       "prompt_shape": "Create a [grid] character design sheet for original [character]. Include [front/side/back], [expressions], [parts/outfit], and [palette], all with identical identity and proportions.",
       "pitfalls": ["Different face in each panel", "No view labels", "Inconsistent costume", "Crowded sheet"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-character-design.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-character-design.md"
     },
     {
       "id": "template-storyboard",
@@ -251,7 +275,7 @@
       "guidance": "State grid and panel order, assign each panel a story beat, shot size, viewpoint, movement cue, duration, and continuity constraints.",
       "prompt_shape": "Create a [grid] storyboard for [sequence]. Panel 1: [shot/beat]. Panel 2: [...]. Keep [character, costume, palette, environment] consistent.",
       "pitfalls": ["Repeated composition", "Missing story progression", "Identity drift", "No shot metadata"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-cinematic-and-animation.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-cinematic-and-animation.md"
     },
     {
       "id": "template-illustration-art",
@@ -263,7 +287,7 @@
       "guidance": "Choose a bounded medium and production context, then define line or brush behavior, shape language, paper/canvas texture, palette, scene density, and finish. Keep reusable characters and products original.",
       "prompt_shape": "An original [publication/artifact] illustration of [subject/action] in [environment], made with [medium], [line/brush behavior], [texture], and [bounded palette].",
       "pitfalls": ["Conflicting media", "Only naming an artist", "Direct character copying", "No physical texture"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-illustration.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-illustration.md"
     },
     {
       "id": "template-technical-illustration",
@@ -275,7 +299,127 @@
       "guidance": "Define exploded or cutaway structure, ordered components, assembly axis, numbered callouts, materials, scale, line style, and plate or blueprint presentation.",
       "prompt_shape": "Create a [ratio] [exploded/cutaway] technical plate of [object]. Arrange components along [axis/order], label [numbers/names], and show [materials, scale, line semantics].",
       "pitfalls": ["Impossible component order", "Unmapped callouts", "Decorative but inaccurate internals", "Unreadable labels"],
-      "source": "docs/prompting-guide/gpt-image-2/gallery-technical-illustration.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-technical-illustration.md"
+    },
+    {
+      "id": "template-tattoo-flash",
+      "domain": "template",
+      "title": "Tattoo design and flash sheet",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit"],
+      "keywords": ["tattoo", "tattoo design", "flash sheet", "linework", "black and grey", "neo traditional", "irezumi", "blackwork", "negative space", "forearm sleeve", "back piece", "hình xăm", "xăm", "bản vẽ xăm"],
+      "guidance": "Fix placement and tradition before detail: linework or shading system, color tradition, stencil-ready silhouette, and negative-space gaps that let the design breathe on skin. Present the artwork as a flash sheet or design poster on paper, never rendered on a real body photo.",
+      "prompt_shape": "Create a portrait tattoo [flash sheet/back-piece layout] for [placement]. Subject: [motifs]. Style: [linework and shading tradition, limited palette], with [negative-space gaps] and a stencil-ready silhouette on [paper texture]. Small readable labels: \"[STYLE TOKEN]\". Make it a professional tattoo design presentation.",
+      "pitfalls": ["Artwork rendered on real skin instead of a design sheet", "Detail too fine to tattoo", "No negative-space breaks", "Tattoo traditions mixed unintentionally"],
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-tattoo-design.md"
+    },
+    {
+      "id": "template-isometric",
+      "domain": "template",
+      "title": "Isometric miniature diorama",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit"],
+      "keywords": ["isometric", "diorama", "miniature", "cutaway", "30 degree", "game map", "tile grid", "3d miniature", "sa bàn", "đẳng cự", "mô hình thu nhỏ"],
+      "guidance": "Lock the isometric angle and grid first, then populate with named buildings, props, and miniature figures, plus ambient occlusion for miniature depth. Open floors as a cutaway when interiors matter and leave breathing room around the floating diorama.",
+      "prompt_shape": "A detailed isometric 3D miniature diorama of [district/scene] with precise 30-degree isometric alignment on a [tile grid]. Include [buildings, props, tiny figures] along [footprint]. [Open the front walls to show interiors]. Soft ambient light from [direction], [palette], subtle ambient occlusion, clean [background] with space around the diorama.",
+      "pitfalls": ["Isometric angle drifting between structures", "Stairs or floors that cannot connect", "No background breathing room", "Storefront lettering that turns to gibberish"],
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-isometric.md"
+    },
+    {
+      "id": "template-retro-cyberpunk",
+      "domain": "template",
+      "title": "Cyberpunk and retro-future board",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit", "multi-reference"],
+      "keywords": ["cyberpunk", "neon", "retro future", "mecha", "dystopian", "synth", "night market", "design board", "tương lai", "viễn tưởng", "neon"],
+      "guidance": "Choose the delivery format first: one cinematic scene, an asymmetric design board with named panels, or a labeled character grid. Fix a tight neon palette, wet reflective surfaces, holographic signage, and original character designs.",
+      "prompt_shape": "Create a [cinematic scene/asymmetric design board/3x3 card grid] titled \"[TITLE]\". [Name every panel and its beat or character]. Palette: [two or three neon accents] against [wet asphalt or black]. Materials: [glass, chrome, wet cobbles]. Layered reflections, holographic signage, editorial margins, small readable labels.",
+      "pitfalls": ["Every neon color used at once", "Copying an existing IP character", "Panels that repeat the same beat", "Signage too small to read"],
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-retro-and-cyberpunk.md"
+    },
+    {
+      "id": "template-pose-sheet",
+      "domain": "template",
+      "title": "Numbered pose and action contact sheet",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit", "multi-reference"],
+      "keywords": ["pose sheet", "contact sheet", "16 poses", "action sequence", "turnaround reference", "video model reference", "character consistency", "bảng tư thế", "chuỗi hành động"],
+      "guidance": "For motion or video references, lock the character from the supplied reference image, request one grid with an exact cell count and reading order, number every cell, and hold identity, outfit, and accessories constant at a fixed scale on a plain background.",
+      "prompt_shape": "Using reference image 1 as the character design, create a square 4-by-4 contact sheet showing [ACTION SEQUENCE] in 16 distinct full-body poses, read left to right, top to bottom. Number each cell 1-16 in its upper-left corner. Preserve [identity features, outfit, colors, accessories] at consistent scale on a white background. Do not crop limbs. Include no text except the panel numbers.",
+      "pitfalls": ["Cell count or numbering drift", "Identity or accessories changing between cells", "Limbs cropped at the frame edge", "Treating one sheet as an animation"],
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/templates-gpt-image-2.5.md"
+    },
+    {
+      "id": "template-document-publishing",
+      "domain": "template",
+      "title": "Document and publication page",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit"],
+      "keywords": ["white paper", "whitepaper", "manual", "report page", "encyclopedia plate", "document", "publishing", "table of contents", "figure caption", "slide deck", "slides", "presentation deck", "tài liệu", "báo cáo", "sách hướng dẫn", "ấn phẩm"],
+      "guidance": "Define page size, column grid, table of contents, figure and caption system, and heading hierarchy before content, then keep tables and captions locked to that grid.",
+      "prompt_shape": "Create a [page size and orientation] [white paper/manual/encyclopedia plate] page about [subject]. Grid: [columns and margins]. Header \"[PAGE TITLE]\", contents [named sections]. Figures: [type] with captions [...]; table [columns and units]. Typography hierarchy: [headings, body, captions]. Keep charts aligned to the page grid and text readable.",
+      "pitfalls": ["Dense unreadable microtext", "Figures floating off the page grid", "Invented statistics or sources", "Every page element at the same weight"],
+      "source": "freestylefly/awesome-gpt-image-2 docs/templates.md"
+    },
+    {
+      "id": "template-3d-collectible",
+      "domain": "template",
+      "title": "3D collectible figure",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit", "multi-reference"],
+      "keywords": ["collectible toy", "figure", "blind box", "3d toy", "vinyl figure", "avatar toy", "desk display", "mô hình sưu tầm", "figure", "đồ chơi"],
+      "guidance": "Carry identity anchors from the reference into a premium collectible: preserve face and outfit first, then specify toy material, base, packaging, studio lighting, and collectible scale.",
+      "prompt_shape": "Turn reference image 1 into a premium 3D collectible figure of [character]. Preserve [face and outfit anchors]. Material: [vinyl/resin finish with toy specular]. Base: [pedestal]. Presentation: [blind-box packaging/desk display] with the minimal accurate label \"[LABEL]\". Studio lighting, collectible scale.",
+      "pitfalls": ["Generic toy body with no identity anchors", "Photoreal skin instead of toy material", "Invented or garbled packaging text", "Scale that reads as a real person"],
+      "source": "freestylefly/awesome-gpt-image-2 docs/templates.md"
+    },
+    {
+      "id": "template-history-classical",
+      "domain": "template",
+      "title": "Historical and classical theme",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate"],
+      "keywords": ["history", "classical", "dynasty", "scroll", "ink wash", "gongbi", "traditional", "poetry", "period costume", "cổ trang", "tranh thủy mặc", "lịch sử", "cổ điển"],
+      "guidance": "Name one period with its clothing system, objects, and layout format, then keep every prop inside that period. Choose scroll, album page, or poster format deliberately instead of defaulting to a poster.",
+      "prompt_shape": "Create a [scroll/album page/poster] in [period] style about [subject]. Clothing and objects: [period-accurate references]. Medium: [ink wash/gongbi/brush] on [paper texture] in [restrained palette]. Layout and reading order: [order]. Keep every prop inside [period]; avoid modern objects.",
+      "pitfalls": ["Mixing dynasties or periods", "Modern props inside a period scene", "Scroll format with no reading order", "Calligraphy that becomes fake glyph clutter"],
+      "source": "freestylefly/awesome-gpt-image-2 docs/templates.md"
+    },
+    {
+      "id": "template-sticker-pack",
+      "domain": "template",
+      "title": "Sticker sheet and die-cut pack",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate"],
+      "keywords": ["sticker", "sticker sheet", "sticker pack", "die-cut", "holographic", "kawaii", "badge", "icon set", "decal", "bộ sticker", "nhãn dán"],
+      "guidance": "Treat the pack as a set system: fix the count, the border treatment, the shared illustration style, and the sheet layout, then vary subject per sticker while keeping line weight, palette, and finish identical.",
+      "prompt_shape": "Create a set of [count] die-cut stickers arranged as a sticker sheet on [background]. Shared style: [line weight, palette, rounded shapes, shading], [thick white border or holographic finish], glossy specular highlights, subtle drop shadows. Each sticker: [subject list]. Keep the illustration style identical across the set.",
+      "pitfalls": ["Stickers with inconsistent line weight or palette", "Border treatment changing per sticker", "Subjects too detailed to read at sticker scale", "Invented brand marks"],
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-more-illustration-styles.md"
+    },
+    {
+      "id": "template-gaming-keyart",
+      "domain": "template",
+      "title": "Game key art and in-game screenshot",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit"],
+      "keywords": ["game", "gaming", "key art", "gameplay", "screenshot", "hud", "rpg", "first person", "level design", "minimap", "game art", "trò chơi", "ảnh game"],
+      "guidance": "Pick the game-camera context and the display context first, then populate the playable scene and add a restrained HUD with health, stamina, quest text, and minimap. Keep every character, level, and logo original.",
+      "prompt_shape": "Create an original [genre] game [key art/in-game screenshot] in [game-camera context] at [ratio]. Scene: [playable environment, characters, action]. HUD: [health, stamina, quest text, minimap]. Materials and lighting: [...]. Premium next-gen look with believable, readable UI.",
+      "pitfalls": ["Copying an existing game's characters, levels, or logos", "HUD elements with unreadable text", "Screenshot with no camera or display context", "HUD competing with the scene"],
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-gaming.md"
+    },
+    {
+      "id": "template-screen-photography",
+      "domain": "template",
+      "title": "Photograph of a screen, not a screenshot",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit"],
+      "keywords": ["photo of a screen", "screen photography", "not a screenshot", "moiré", "rgb subpixel", "phone photo of laptop", "over the shoulder display", "chụp màn hình", "ảnh chụp màn hình"],
+      "guidance": "Ask for a raw phone photo of a display rather than a screenshot: name the viewpoint and hand-held quality, then add glass and pixel evidence such as the RGB subpixel grid, moiré bands, dust, fingerprints, and uneven reflections.",
+      "prompt_shape": "Create a raw smartphone photo of a [laptop/monitor/phone] screen, not a screenshot, [ratio], [viewpoint] with [device edge and surroundings visible]. Show [visible RGB subpixel grid, subtle moiré bands, dust specks, faint fingerprints, uneven glass reflections, handheld noise, slight perspective skew]. Screen content: [UI description with exact fictional labels].",
+      "pitfalls": ["Result reads as a clean screenshot", "No glass, pixel, or reflection evidence", "Impossible screen perspective", "Unreadable UI text"],
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/gallery-screen-photography.md"
     },
     {
       "id": "mode-generate",
@@ -287,7 +431,7 @@
       "guidance": "Describe the complete desired result: purpose, canvas, subject, action, environment, composition, visual direction, text, output, and targeted avoids.",
       "prompt_shape": "Create [asset/purpose]. [Canvas/layout]. [Subject/action/environment]. [Composition]. [style/material/light/palette]. [text/output/avoid].",
       "pitfalls": ["Writing only a subject noun", "Leaving composition implicit", "Mixing edit language into a fresh generation"],
-      "source": "docs/prompting-guide/nano-banana/ultimate-prompting-guide.md"
+      "source": "https://developers.openai.com/api/docs/guides/image-prompting"
     },
     {
       "id": "mode-edit-invariants",
@@ -295,11 +439,11 @@
       "title": "Reference edit with invariants",
       "providers": ["universal", "openai", "gemini"],
       "modes": ["edit"],
-      "keywords": ["edit", "replace", "change only", "preserve", "invariants", "chỉnh sửa", "thay thế", "giữ nguyên", "bất biến"],
-      "guidance": "Lead with the transformation, define the changed target, then explicitly preserve identity, pose, geometry, camera, lighting, background, text, or brand elements that must not drift.",
+      "keywords": ["edit", "replace", "change only", "preserve", "invariants", "replace outfit", "change outfit", "swap garment", "replace clothing", "keep face", "preserve face", "đổi trang phục", "chỉnh sửa", "thay thế", "giữ nguyên", "bất biến"],
+      "guidance": "Lead with the transformation, define the changed target, then explicitly preserve identity, pose, geometry, camera, lighting, background, text, or brand elements that must not drift. Phrase the change as a single condition swap where possible (\"make it a winter evening\") so the rest of the frame stays put, and preserve a referenced face or identity with several reinforcing signals rather than one: state preservation explicitly, restate the matching features in words, and repeat the invariant at the end.",
       "prompt_shape": "TASK: [transformation]. CHANGE: [target/result]. PRESERVE: [invariants]. OUTPUT: [crop/fidelity]. AVOID: [task-specific drift].",
       "pitfalls": ["Only describing the new result", "Unstated invariants", "Changing text or framing unintentionally"],
-      "source": "docs/prompting-guide/gpt-image-2/craft.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/craft.md"
     },
     {
       "id": "mode-inpaint",
@@ -311,7 +455,7 @@
       "guidance": "Name the masked region, desired replacement, local geometry, edge integration, lighting and texture match, then preserve everything outside the region.",
       "prompt_shape": "Modify only the masked [region]: [change]. Match [adjacent texture, light, perspective]. Preserve every unmasked pixel and the overall composition.",
       "pitfalls": ["Global restyling", "Edge halos", "Mismatched perspective", "Changing outside the mask"],
-      "source": "docs/prompting-guide/gpt-image-2/craft.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/craft.md"
     },
     {
       "id": "mode-multi-reference",
@@ -319,11 +463,23 @@
       "title": "Multi-reference composition",
       "providers": ["universal", "openai", "gemini"],
       "modes": ["multi-reference", "edit"],
-      "keywords": ["multi-reference", "multiple images", "image 1", "image 2", "compose", "reference roles", "nhiều ảnh", "tham chiếu", "ghép ảnh", "vai trò"],
-      "guidance": "Identify every image by index and one role, state the base or destination, explain what transfers from each reference, and list invariants for the composed result.",
+      "keywords": ["multi-reference", "multiple images", "image 1", "image 2", "compose", "reference roles", "blend images", "combine images", "image blending", "assign roles", "replace background", "background replacement", "outfit swap", "garment swap", "wearing outfit", "swap clothes", "face swap", "keep character", "preserve character", "nhiều ảnh", "tham chiếu", "ghép ảnh", "trộn ảnh", "vai trò", "mặc đồ", "mẫu mặc", "đổi nền", "thay nền", "thay background", "đổi background", "người mẫu", "đổi trang phục"],
+      "guidance": "Identify every image by index and one role, state the base or destination, explain what transfers from each reference, and list invariants for the composed result. For a blend, one sentence per source naming what it contributes, and a bound on how many references are in play, keeps roles from bleeding. If a claim about the reference limit or role count matters, verify the current documented limit for the chosen model.",
       "prompt_shape": "Image 1 = [base]. Image 2 = [style/garment/object]. Image 3 = [logo/detail]. Apply [specific attribute] from each source to Image 1 while preserving [invariants].",
       "pitfalls": ["Unlabeled inputs", "Conflicting source roles", "Identity bleed", "No destination image"],
-      "source": "docs/prompting-guide/gpt-image-2/craft.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/craft.md"
+    },
+    {
+      "id": "mode-reverse-anchors",
+      "domain": "mode",
+      "title": "Reverse prompt from a reference image",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["reverse"],
+      "keywords": ["reverse prompt", "from image", "recreate", "imitate", "analyze image", "extract prompt", "reference photo", "visual anchors", "viết lại prompt", "từ ảnh", "phân tích ảnh", "tái tạo"],
+      "guidance": "Decompose the supplied image into use case, medium, subject type, composition, camera and viewpoint, lighting, color, materials, spatial layers, mood sources, and post-processing, analyzing only dimensions the image actually contains. Promote the 3-5 anchors that most affect similarity into the first third of the prompt.",
+      "prompt_shape": "[3-5 reproduction-critical anchors first: medium boundary, composition, silhouette or pose, signature lighting, key materials, background geometry, color relationships], then [supporting detail: camera and viewpoint, spatial layers, mood through concrete elements, post-processing, target medium]. Avoid [confusable media and likely generation defects].",
+      "pitfalls": ["Mechanically listing every visible object", "Inventing brands, people, locations, or camera metadata the image does not show", "Style anchors buried after narrative detail", "Relying on artist or IP names instead of observable technique"],
+      "source": "wuyoscar/gpt_image_2_skill skills/get-prompt-from-image/references/analysis-framework.md"
     },
     {
       "id": "provider-gemini-creative-brief",
@@ -331,23 +487,119 @@
       "title": "Gemini and Nano Banana creative brief",
       "providers": ["gemini"],
       "modes": ["generate", "edit", "multi-reference", "inpaint"],
-      "keywords": ["Gemini", "Nano Banana", "reasoning image", "creative director", "natural prose", "Google image"],
-      "guidance": "Use natural prose, a purpose anchor, explicit action and physical relationships, one optics context, and the output specification at the end. For references, explain their relationship and the new scenario.",
-      "prompt_shape": "[Purpose]. [Subject, composition, action, location/atmosphere, style/optics]. [Reference relationship or edit contract]. [resolution and aspect ratio].",
-      "pitfalls": ["Tag soup", "Several camera systems", "Unclear relationship among inputs", "Output spec buried in the middle"],
-      "source": "docs/prompting-guide/nano-banana/ultimate-prompting-guide.md"
+      "keywords": ["Gemini", "Nano Banana", "Nano Banana Pro", "Nano Banana 2", "Gemini creative brief", "Nano Banana brief", "reasoning image", "creative director", "natural prose", "strong verb", "positive framing", "text first", "Google image"],
+      "guidance": "Open with a strong verb naming the primary operation, then write connected natural prose: subject, action, location, composition, style, and the output specification at the end. Describe what you want rather than what to exclude, use photographic and cinematic terms to control the camera, and iterate conversationally. For multiple inputs, name each reference and its relationship, then the new scenario.",
+      "prompt_shape": "[Strong verb] a [output type]. [Subject] [action] in [location/context], [composition], [style, light, grade]. [Reference relationship, if any.] [resolution and aspect ratio].",
+      "pitfalls": ["Tag soup instead of narrative", "Negative phrasing such as avoid cars instead of empty street", "Several camera systems", "Unclear relationship among inputs", "Output spec buried in the middle"],
+      "source": "https://cloud.google.com/blog/products/ai-machine-learning/ultimate-prompting-guide-for-nano-banana"
     },
     {
       "id": "provider-openai-structured",
       "domain": "provider",
-      "title": "GPT Image structured prompt",
+      "title": "GPT Image 2.5 structured prompt",
       "providers": ["openai"],
       "modes": ["generate", "edit", "multi-reference", "inpaint"],
-      "keywords": ["GPT Image", "OpenAI image", "structured prompt", "JSON", "layout contract", "exact text"],
-      "guidance": "Put canvas and layout before subject detail, quote exact text, and use explicit sections or JSON-like visual subsystems for complex products, UI, diagrams, and multi-reference edits.",
+      "keywords": ["GPT Image 2.5", "GPT Image", "OpenAI image", "structured prompt", "JSON config", "layout contract", "exact text"],
+      "guidance": "For GPT Image 2.5, put canvas and layout before subject detail, quote exact text, and drive multi-system visuals (products, food, UI, diagrams, multi-reference edits) with explicit sections or a JSON config block.",
       "prompt_shape": "CANVAS/LAYOUT: [...]. SUBJECT/SCENE: [...]. MATERIALS/LIGHT/PALETTE: [...]. TEXT: [...]. PRESERVE/AVOID: [...].",
       "pitfalls": ["Unstructured dense briefs", "Unquoted copy", "Missing edit invariants", "Loading every pattern instead of one category"],
-      "source": "docs/prompting-guide/gpt-image-2/craft.md"
+      "source": "wuyoscar/gpt_image_2_skill skills/gpt-image/references/craft.md"
+    },
+    {
+      "id": "provider-openai-2-5-models",
+      "domain": "provider",
+      "title": "GPT Image 2.5 model choice and settings",
+      "providers": ["openai"],
+      "modes": ["generate", "edit", "multi-reference", "inpaint"],
+      "keywords": ["GPT Image 2.5", "flare", "sunburst", "model choice", "quality setting", "xhigh", "max", "transparent background", "input fidelity", "chọn model", "chất lượng"],
+      "guidance": "Resolve the model before tuning anything else: Flare trades quality for speed, Sunburst targets quality. Pick a quality level, compare before rewriting the prompt, and raise to xhigh or max only for an unmet requirement inside the latency budget; the same quality label does not imply the same output across models. Compare cost per accepted image rather than per request, and track retry rate, correction turns, and slow-response time alongside visual acceptance when comparing models. Keep model, quality, size, background, and format settings outside the prompt body. For transparent assets request the alpha channel explicitly with PNG or WebP, then check edges. Older models keep their own parameter sets rather than inheriting new ones: the original GPT Image 2 line stops at low/medium/high/auto and always processes inputs at high fidelity, while the earlier 1.x models expose input fidelity and are scheduled for shutdown, so confirm current parameters and deprecation dates before promising a setting.",
+      "prompt_shape": "Prompt: [image brief]. Settings kept outside the prompt: model [flare/sunburst], quality [auto/low/medium/high/xhigh/max], size [ratio/resolution], background [auto/opaque/transparent], input fidelity [low/high, edit only; omit on models that always use high].",
+      "pitfalls": ["Rewriting the prompt when the quality level was the real problem", "Assuming a faster model is cheaper per accepted image", "Assuming a higher quality setting always improves the result", "Expecting a drawn checkerboard to count as transparency", "Copying settings between models unchanged", "Passing a new model's quality flag to an older model", "Building on a model with a shutdown date"],
+      "source": "https://developers.openai.com/api/docs/guides/image-prompting"
+    },
+    {
+      "id": "mode-sketch-to-render",
+      "domain": "mode",
+      "title": "Sketch to realistic render",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["edit", "generate"],
+      "keywords": ["sketch", "drawing", "napkin sketch", "layout guide", "line art to photo", "whiteboard", "phác thảo", "bản vẽ tay", "dựng hình"],
+      "guidance": "Split the two jobs: the sketch owns arrangement, the prompt owns finish. Say the drawing is layout guidance only, preserve its proportions, element positions, and perspective, then supply plausible materials, lighting, contact shadows, and environment. Forbid new elements and text unless they are requested.",
+      "prompt_shape": "Turn this drawing into a realistic [photograph/render]. Preserve the exact layout, proportions, and perspective. Choose realistic materials and lighting consistent with the sketch intent: [materials, light, atmosphere]. Do not add new elements or text.",
+      "pitfalls": ["Tracing the sketch literally so it stays a drawing", "Creative additions that change the layout", "No material or light direction chosen for the model"],
+      "source": "https://developers.openai.com/api/docs/guides/image-prompting"
+    },
+    {
+      "id": "mode-transparent-cutout",
+      "domain": "mode",
+      "title": "Transparent product cutout",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["edit", "generate"],
+      "keywords": ["transparent background", "cutout", "alpha channel", "isolate product", "no background", "png alpha", "tách nền", "nền trong suốt"],
+      "guidance": "Ask for the isolated subject in the prompt and for an alpha background in the settings, forbid the usual intruders (drop shadow, halo, checkerboard, background fill), and name the thin geometry that fails first: cords, wire, hair, perforations, glass edges. Keep PNG without compression for PNG output and re-state the transparency requirement on follow-up edits.",
+      "prompt_shape": "Extract [subject] from the input image and isolate it on a fully transparent background. Output: centered subject, crisp silhouette, clean anti-aliased edges around [thin parts], no halo, no drop shadow, no checkerboard, no background fill. Preserve [geometry and label legibility] exactly and do not restyle the subject.",
+      "pitfalls": ["Asking for transparency only in the prompt or only in the settings", "Drop shadow or halo left around the subject", "Checkerboard pattern generated as fake transparency", "Thin geometry fringed at the edges"],
+      "source": "https://developers.openai.com/api/docs/guides/image-prompting"
+    },
+    {
+      "id": "mode-upscale-restore",
+      "domain": "mode",
+      "title": "Upscale, restore, and re-render",
+      "providers": ["universal", "gemini", "openai"],
+      "modes": ["edit", "generate"],
+      "keywords": ["upscale", "4K", "restore old photo", "denoise", "sharpen", "resolution boost", "phóng to", "nâng cấp ảnh", "phục hồi ảnh cũ"],
+      "guidance": "Separate two jobs that are often mixed: raising resolution and repairing damage. State the target resolution and aspect ratio, then say explicitly that content, composition, and identity must not change; for restoration name the specific repairs (scratches, dust, fading, torn corners) and forbid invented detail, new objects, or restyled faces.",
+      "prompt_shape": "Upscale this image to [resolution] at [aspect ratio]. Preserve composition, geometry, identity, and colors exactly; add no new objects and do not restyle. [For restoration:] repair [scratches, dust, fading, damage] and reconstruct [specific missing areas] faithfully to the original photograph. Keep grain and texture consistent instead of over-smoothing.",
+      "pitfalls": ["Inventing detail that was never in the source", "Over-smoothing to a plastic result", "Shifting identity while restoring faces", "Asking for upscale and restyle in the same pass"],
+      "source": "NikiforovAll/claude-code-rules plugins/handbook-nano-banana/skills/nano-banana-prompting/references/guide.md"
+    },
+    {
+      "id": "mode-text-localization",
+      "domain": "mode",
+      "title": "In-image text translation and localization",
+      "providers": ["universal", "gemini", "openai"],
+      "modes": ["edit"],
+      "keywords": ["translate text in image", "localization", "localize", "korean", "japanese", "vietnamese text", "translate copy", "dịch chữ trong ảnh", "dịch sang tiếng Việt", "dịch ảnh", "bản địa hóa", "đa ngôn ngữ"],
+      "guidance": "Localize the copy, not the artwork. Quote every string that changes and its target language, hold layout, typography character, color, and image asset identical, and expect longer target strings to need a smaller size or wider column instead of a re-layout. Re-check that no source-language text survives anywhere in the frame.",
+      "prompt_shape": "Translate all [source language] text in this image into [target language], keeping everything else exactly the same. Replace \"[source string]\" with \"[target string]\". Preserve layout, panel geometry, font character, colors, and imagery; adjust only type size or line breaks if the [target language] copy needs more room. Leave no [source language] text.",
+      "pitfalls": ["Re-layouting the whole design instead of the copy", "Mixed source and target language left in frame", "Longer target strings overflowing their container", "Swapping the typeface because the text changed language"],
+      "source": "NikiforovAll/claude-code-rules plugins/handbook-nano-banana/skills/nano-banana-prompting/references/guide.md"
+    },
+    {
+      "id": "craft-vibe-signature-details",
+      "domain": "craft",
+      "title": "Vibe from signature details, not adjectives",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit", "multi-reference"],
+      "keywords": ["vibe", "era", "nostalgic", "2000s", "1990s", "film noir", "signature details", "epoch", "hoài niệm", "thời kỳ", "không khí"],
+      "guidance": "An era or mood lands through ordinary signature objects, not through the label. Replace \"nostalgic\" with the props and surfaces that produced it: the CD player, beaded curtain, lip glosses, direct flash. Pick two to four era-defining details, and add candid behavior so the scene reads as documentation rather than a styled set.",
+      "prompt_shape": "[Era/style] photograph of [subject] in [setting]. Signature details: [2-4 objects, surfaces, and media of that era]. Light and capture: [era-appropriate flash or available light, grain]. Behavior: [candid action, gaze off camera]. Mood: [evocative pair of words]. Keep the props era-consistent and avoid modern objects.",
+      "pitfalls": ["Naming a decade without any of its objects", "Modern props leaking into a period scene", "Styled posing instead of candid behavior", "Five or more era cues competing for attention"],
+      "source": "NikiforovAll/claude-code-rules plugins/handbook-nano-banana/skills/nano-banana-prompting/references/guide.md"
+    },
+    {
+      "id": "template-physical-object-mockup",
+      "domain": "template",
+      "title": "Physical object mockup of a design",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit"],
+      "keywords": ["magazine cover", "book on desk", "poster on wall", "printed photo", "object mockup", "barcode", "standee", "bìa tạp chí", "in ấn thật", "mô phỏng vật lý"],
+      "guidance": "Ask for a photograph of the printed artifact rather than a flat layout. Name the carrier object, its surface and position, the viewing angle, and the print-realism cues that prove it is physical: paper curl, thickness, gloss or matte finish, and the small production marks like issue number, date, barcode, and price.",
+      "prompt_shape": "A photorealistic photograph of [magazine cover/poster/print/box] titled \"[TITLE]\" [lying on a white shelf/resting against a wall], shot from [angle] with [light]. Show [design content] on the cover, with paper texture, surface reflection, and [small production marks: issue number, date, barcode, price] in the corner. Background: [minimal set]. Text in [typeface character], legible.",
+      "pitfalls": ["Flat layout with no physical carrier or surface", "Perfectly flat paper with no curl or thickness", "Missing barcode, date, or price on a publication", "Perspective that contradicts the described surface"],
+      "source": "NikiforovAll/claude-code-rules plugins/handbook-nano-banana/skills/nano-banana-prompting/references/guide.md"
+    },
+    {
+      "id": "template-perspective-framing",
+      "domain": "template",
+      "title": "Role and perspective framing",
+      "providers": ["universal", "openai", "gemini"],
+      "modes": ["generate", "edit"],
+      "keywords": ["how a chef sees", "how engineers see", "point of view", "perspective framing", "interpretation", "góc nhìn", "diễn giải theo nghề"],
+      "guidance": "Ask for an interpretation from a viewpoint instead of a literal scene, then say which signals that viewpoint amplifies so the model does not guess. The prompt supplies the emphasis list; the model supplies the render.",
+      "prompt_shape": "How [role/profession] sees [subject]. Emphasize [signals that viewpoint would foreground, e.g. structure, loads, blueprints, materials, measurements]. [Insert or de-emphasize people and decoration]. Visual language: [drafting, annotations, x-ray, or mixed-media]. [Ratio].",
+      "pitfalls": ["Naming the viewpoint without the signals it emphasizes", "Falling back to a plain photo of the subject", "Annotations with no informational value", "Mixing two conflicting visual languages"],
+      "source": "NikiforovAll/claude-code-rules plugins/handbook-nano-banana/skills/nano-banana-prompting/references/guide.md"
     }
   ]
 }
