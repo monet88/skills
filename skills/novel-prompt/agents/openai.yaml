@@ -1,0 +1,13 @@
+interface:
+  display_name: Novel Prompt
+  short_description: Build Glossarion translation and glossary prompts from novel
+    chapters
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true
