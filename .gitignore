@@ -29,3 +29,6 @@ skills-lock.json
 
 # agent-browser-skill-forge private workspace
 .agent-forge/
+
+# Playwright MCP session artifacts
+.playwright-mcp/

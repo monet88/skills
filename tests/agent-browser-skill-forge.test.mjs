@@ -103,6 +103,19 @@ async function runPythonAsync(args, options = {}) {
   return result.stdout;
 }
 
+// The daemon flushes its request log asynchronously, so a single read right
+// after `wait --load networkidle` can legitimately return zero entries.
+// Poll until the expected traffic appears, then let the caller assert.
+async function pollNetworkRequests(args, pattern, { attempts = 40, delayMs = 150 } = {}) {
+  let output = '';
+  for (let i = 0; i < attempts; i++) {
+    output = await runPythonAsync(args);
+    if (pattern.test(output)) return output;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return output;
+}
+
 function allMarkdown(dir) {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -764,7 +777,10 @@ describe('agent-browser-skill-forge Issue #13 (Operation Capabilities & Zero-Sid
       await runPythonAsync(['exec', '--root', root, '--run-id', runId, '--', 'open', baseUrl]);
       await runPythonAsync(['exec', '--root', root, '--run-id', runId, '--', 'wait', '--load', 'networkidle']);
 
-      const initialTraffic = await runPythonAsync(['exec', '--root', root, '--run-id', runId, '--', 'network', 'requests', '--type', 'xhr,fetch']);
+      const initialTraffic = await pollNetworkRequests(
+        ['exec', '--root', root, '--run-id', runId, '--', 'network', 'requests', '--type', 'xhr,fetch'],
+        /categories/i,
+      );
       assert.match(initialTraffic, /categories/i);
 
       // 3. Phase 2: Zero-Side-Effect Safety Verification via Offline HAR
