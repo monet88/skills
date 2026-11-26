@@ -1,18 +1,55 @@
 ---
 name: video-clone
-description: Clone, remix, or reverse-engineer an existing video while swapping face, hair, body, or background using Create mode (First+Last frame / dynamic duration) instead of Video Edit. Orchestrates yt-upload, /watch (Gemini 1:1 motion analysis), ffmpeg keyframe extraction, gptimg clean swaps, flow/vids dynamic-duration rendering, audio muxing, and optional VeoWatermarkRemover. Use when asked to clone a video, swap face/body/background in a video, or recreate a reference video's motion 1:1.
+description: Clone, remix, or motion-transfer an existing video while swapping character, face, hair, style, or background via Google Flow V2V (`flow edit`, 3-15s) or Create mode (`flow video` First+Last frame + `gptimg` for human face-swap). Orchestrates `flow edit`/`flow video` (`360p`/`720p`) + `--upscale 1080p`/`flow upscale`, `yt-upload`, `/watch`, `ffmpeg`, `gptimg`, audio muxing, and optional VeoWatermarkRemover. Use when asked to clone a video, motion-transfer a clip, swap face/character/style/background, or recreate a reference video's motion 1:1.
 ---
 
-# Video Clone (Create Mode + Dynamic Duration)
+# Video Clone (V2V Motion Transfer & Create Mode)
 
-Recreate a reference video 1:1 with a swapped face, hair, body, or background without Video Edit mode (which Google Vids/Flow blocks for human face-swap).
+Recreate a reference video 1:1 with a swapped character, face, hair, style, or background.
+
+## Choose Mode (Pick First)
+
+| Mode | When to Use | Path & Limits |
+|---|---|---|
+| **Mode A — V2V Motion Transfer (`flow edit`)** | Swapping character, costume, style, prop, or background while preserving 1:1 original motion, camera, and timing directly from the source video. | `3–15s` per `--start`/`--end` slice, up to 5 `--ref` images, gen `360p` (1/3 credits) or `720p` + `--upscale 1080p`. Fall back to Mode B if Flow refuses or drifts on direct human face-swap. |
+| **Mode B — Create Mode (`gptimg` + `flow video` First+Last)** | Strict human face/hair swap (where Google Flow/Vids V2V refuses human portraits) or full frame-locked scene redesign. | `yt-upload` + `/watch` → `ffmpeg` keyframes → `gptimg` swaps → `flow video` (`3–10s` First+Last or `3–15s` 1-frame, `360p`/`720p` + `--upscale 1080p`). |
 
 ## Prerequisites
 
 - **ShardBrowser Launcher** running locally (`127.0.0.1:40325`) with a profile in the shared Pool (`vids pool list --json`) signed into `chatgpt.com` and `flow.google.com`.
 - CLIs on `PATH`: `yt-upload`, `ffmpeg`, `ffprobe`, `gptimg`, `flow`, `vids`, plus the `/watch` skill (`GEMINI_API_KEY`) and optional `VeoWatermarkRemover` (`remove-video-watermark.ps1`).
 
-## Workflow
+---
+
+## Mode A — V2V Motion Transfer (`flow edit`)
+
+1. **Inspect source duration & plan segments (`ffprobe`):**
+   - Measure total duration with `ffprobe`. Split clips `>15s` evenly into `3–15s` segments so no tail segment is `<3s` (e.g. `16s` → `0..8` and `8..16`; `flow edit` fails fast on segments `<3s` or `>15s`).
+2. **Confirm swap spec with user (unless already specified):**
+   - Swap prompt, up to 5 watermark-free `--ref` images, and resolution (`--resolution 360p` for 1/3-credit drafts vs `--resolution 720p --upscale 1080p` for final).
+3. **Render segments (`flow edit`):**
+   ```powershell
+   flow edit `
+     --input input.mp4 `
+     --ref char.png `
+     --start 0 --end 10 `
+     --aspect 9:16 `
+     --resolution 360p `
+     --prompt "<describe the swap while preserving original subject motion, framing, and lighting>" `
+     --output clips\seg1.mp4 `
+     --json
+   ```
+   - To upgrade an approved `360p` or `720p` draft directly to `1080p` without re-generating (0 credits for `≤10s`, `1–5` credits for `11–15s`), pass its **original** `media_id` to `flow upscale`:
+     ```powershell
+     flow upscale --media-id <orig_media_id> --resolution 1080p --output clips\seg1_1080p.mp4 --json
+     ```
+   - Or render final directly with `--resolution 720p --upscale 1080p` (`flow video --ref-video input.mp4` aliases single-clip V2V without `--start`/`--end`).
+
+**Done when:** Every `clips/segN.mp4` returns `ok: true`, `ffprobe` confirms expected duration (`3–15s`) and resolution, and visual inspection passes (switch to Mode B if Flow refuses human face-swap). Proceed to **Shared Finish (Step 5 & Step 6)**.
+
+---
+
+## Mode B — Strict Human Face-Swap: Create Mode (`gptimg` + `flow video`)
 
 ### Step 1 — Upload & Analyze 1:1 Motion (`yt-upload` + `/watch`)
 
@@ -73,7 +110,7 @@ Pause and share the `<work_dir>/swapped/` folder and clickable links to all swap
 
 ### Step 4 — Render Dynamic-Duration Clips (`flow video` / `vids animate`)
 
-Render each segment with its exact dynamic duration using **Omni 1.2 Flash**:
+Render each segment with its exact dynamic duration using **Omni 1.2 Flash** (`--resolution 360p` for cheap drafts, or `--resolution 720p --upscale 1080p` for final; approved drafts can also upgrade via `flow upscale --media-id <orig_id> --resolution 1080p`):
 
 - **First + Last frame (`3–10s`):**
   ```powershell
@@ -82,23 +119,34 @@ Render each segment with its exact dynamic duration using **Omni 1.2 Flash**:
     --last-frame swapped\seg1_last.png `
     --aspect 9:16 `
     --duration 6 `
+    --resolution 720p `
+    --upscale 1080p `
     --prompt "<chronological 1:1 motion prompt from Step 1; keep exact face, outfit, props, and background unchanged>" `
     --output clips\seg1.mp4 `
     --json
   ```
 - **Single-frame long shots (`11–15s`):** use `flow video --first-frame ... --duration <11..15>` or `vids animate --input ... --duration <3..15>` (or split into two chained First+Last clips sharing a swapped mid-frame).
-- Run sequentially on a single ShardX profile, or pass `--strategy round-robin` when the Pool has multiple profiles.
+- Run sequentially on a single ShardX profile (built-in `--min-interval 15` pacing spaces requests automatically), or pass `--strategy round-robin` when the Pool has multiple profiles.
 
 **Done when:** Every `clips/segN.mp4` returns `ok: true` and `ffprobe` confirms the expected duration.
 
+---
+
+## Shared Finish
+
 ### Step 5 — Stitch Segments & Mux Original Audio (`ffmpeg`)
 
-```powershell
-ffmpeg -y -i clips\seg1.mp4 -i clips\seg2.mp4 -i clips\seg3.mp4 -i input.mp4 `
-  -filter_complex "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]" `
-  -map "[v]" -map "3:a" -c:v libx264 -crf 18 -preset fast -c:a aac -shortest `
-  cloned_raw.mp4
-```
+- **Multi-segment clips:**
+  ```powershell
+  ffmpeg -y -i clips\seg1.mp4 -i clips\seg2.mp4 -i clips\seg3.mp4 -i input.mp4 `
+    -filter_complex "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]" `
+    -map "[v]" -map "3:a" -c:v libx264 -crf 18 -preset fast -c:a aac -shortest `
+    cloned_raw.mp4
+  ```
+- **Single-segment Mode A clip** (replace generated audio with original audio without re-encoding video):
+  ```powershell
+  ffmpeg -y -i clips\seg1.mp4 -i input.mp4 -map 0:v -map 1:a -c:v copy -c:a aac -shortest cloned_raw.mp4
+  ```
 
 **Done when:** `ffprobe` confirms video (`h264`), audio (`aac`), expected total duration, and non-zero file size.
 
@@ -116,6 +164,7 @@ pwsh -File "<VEO_WATERMARK_REMOVER>/remove-video-watermark.ps1" -InputVideo "clo
 
 ## Guardrails
 
-- **Rate limits (`PUBLIC_ERROR_UNUSUAL_ACTIVITY`):** If Flow flags rapid probing/requests on a single profile, wait ~15 minutes or rotate to another Pool profile instead of retrying in a tight loop.
-- **Resolution:** Flow First+Last frame outputs `720x1280` (`9:16`); upscale afterward if `1080x1920` is required.
+- **Rate limits (`PUBLIC_ERROR_UNUSUAL_ACTIVITY`):** `flow` enforces `--min-interval 15` (15s spacing per profile), caches already-upsampled clips via `as29s`, and marks `UNUSUAL_ACTIVITY` profiles into a 15-minute cooldown; avoid tight manual retry loops (`--min-interval 0`).
+- **Resolution & Upscaling:** Generation supports `360p` (1/3 credits for drafts) and `720p` (default). Post-generation `--upscale 720p|1080p|4k` (or `flow upscale`) upgrades to `1080p` (`0` credits `≤10s`, `1–5` credits `11–15s`; direct `360p → 1080p` supported) or `4k` (`50–75` credits Ultra). Always pass the **original** `media_id` — Flow rejects `*_upsampled` IDs as input.
+- **`flow edit` hard bounds:** Segment duration must be `3–15s` (fails fast `<3s`), with at most `5` `--ref` images.
 - **Keep clean images:** Never feed watermarked frames into Flow or Vids.
