@@ -48,6 +48,7 @@ Clone this repository and copy the desired skill folder from `skills/<skill-name
 | [`agent-browser-skill-forge`](skills/agent-browser-skill-forge) | Forges reusable skill packages and direct API clients from website exploration via `agent-browser`. |
 | [`ask-impeccable`](skills/ask-impeccable) | Coordinator for Impeccable UI/UX workflows executed inside coding workers. |
 | [`image-prompt-guide`](skills/image-prompt-guide) | Design, rewrite, critique, and optimize prompts for image generation and editing models, including reverse-engineering a prompt from a reference image. |
+| [`kvpn`](skills/kvpn) | Operate the Kaspersky VPN Unlimited user-space rotating proxy (`kvpn`), WireGuard locations, split-tunnel exclusions, and Windows System Proxy. |
 | [`novel-prompt`](skills/novel-prompt) | Create, audit, and optimize Glossarion prompt packs (`system_prompt.md`, `glossary_extract_prompt.md`, optional `glossary_refinement_user_prompt.md`) for Vietnamese fiction translation across Murim, wuxia, xianxia, fantasy, LitRPG, showbiz, Japanese LN and hybrids. |
 
 ---
