@@ -49,6 +49,7 @@ COMBAT / POWER SYSTEM / TECHNICAL CLARITY
 
 IDIOMS, SLANG, PROFANITY, ONOMATOPOEIA
 - Translate idioms, profanity, slang, and sound effects by contextual force and actual action rather than word-for-word substitution.
+- Render vocal sounds and interjections inside dialogue quotes as spoken Vietnamese sounds (`Tsk/Tch` -> `Chậc`, `Ahem/Cough` -> `Khụ / E hèm`, `Sigh` -> `Haizz`, `Heh` -> `Hê`, `Ugh` -> `Hự / Ư`), never as literal action verbs (`"Tặc lưỡi"`, `"Hắng"`, `"Thở dài"`, `"Nuốt"`, `"Rên rỉ"`) or raw English interjections; move purely physical sound beats (`Gulp!`, `Sniff!`) outside quotes.
 
 HTML AND PUNCTUATION
 - Preserve every source HTML tag, attribute, nesting level, emphasis, scene divider, and 1-to-1 `<p>` paragraph structure unchanged (do not merge or split paragraphs); normalize punctuation cleanly for Vietnamese prose.
